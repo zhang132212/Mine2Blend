@@ -19,6 +19,11 @@ STATE_ENUMS={}
 UPDATING_STATE=False
 REQUEST_CACHE={}
 
+def redraw_view(self,context):
+    if context and context.screen:
+        for area in context.screen.areas:
+            if area.type=='VIEW_3D':area.tag_redraw()
+
 def state_items(self,context):
     key=(self.block_id,self.key)
     if key not in STATE_ENUMS:
@@ -193,8 +198,8 @@ class M2BEditorSettings(bpy.types.PropertyGroup):
     grid_id: StringProperty(name="Active Grid")
     state: StringProperty(name="Block State", default="minecraft:stone",update=state_update)
     state_fields:CollectionProperty(type=M2BStateField)
-    minimum: IntVectorProperty(name="From (MC XYZ)", size=3)
-    maximum: IntVectorProperty(name="To (inclusive)", size=3, default=(7, 0, 7))
+    minimum: IntVectorProperty(name="From (MC XYZ)", size=3,update=redraw_view)
+    maximum: IntVectorProperty(name="To (inclusive)", size=3, default=(7, 0, 7),update=redraw_view)
     path: StringProperty(name="Schematic File", subtype="FILE_PATH", default="//building.litematic")
     search: StringProperty(name="Search Blocks")
     status: StringProperty(name="Status")
@@ -213,7 +218,7 @@ class M2BEditorSettings(bpy.types.PropertyGroup):
     job_id:StringProperty()
     autosave:BoolProperty(name='Auto recovery (60s)',default=True)
     recovery_path:StringProperty(name='Recovery file',subtype='FILE_PATH')
-    show_selection:BoolProperty(name='Selection outline',default=True)
+    show_selection:BoolProperty(name='Selection outline',default=True,update=redraw_view)
     hotbar:StringProperty(default=json.dumps(['minecraft:'+b for b in ('stone','oak_planks','glass','oak_stairs','stone_slab','oak_door','oak_fence','lantern','stone_bricks')]))
     hotbar_slot:IntProperty(name='Shortcut slot',default=1,min=1,max=9)
 
@@ -263,11 +268,12 @@ class M2B_OT_command(bpy.types.Operator):
                 rows=json.loads(settings.clipboard or '[]')
                 args['blocks']=[{'position':[r[i]+settings.minimum[i] for i in range(3)],'state':r[3],**({'nbt':r[4]} if r[4] else {})} for r in rows]
                 self.action='apply_blocks'
-            elif self.action in ('slice','show_all','isolate','xray','hide_layer'):
+            elif self.action in ('slice','show_all','isolate','xray','hide_layer','mesh_preview','instance_preview'):
                 if self.action=='slice':view={'slice_min':settings.slice_min,'slice_max':settings.slice_max}
                 elif self.action=='isolate':view={'isolate':[list(settings.minimum),list(settings.maximum)]}
                 elif self.action=='xray':view={'xray':not grid.view['xray']}
                 elif self.action=='hide_layer':view={'hidden_layers':sorted(set(grid.view['hidden_layers'])^{settings.minimum[1]})}
+                elif self.action in ('mesh_preview','instance_preview'):view={'renderer':'instances' if self.action=='instance_preview' else 'mesh'}
                 else:view={'slice_min':None,'slice_max':None,'isolate':None,'hidden_layers':[],'xray':False}
                 args['view']=view;self.action='set_view'
             elif self.action=='load_resource_pack':args['path']=bpy.path.abspath(settings.resource_path)
@@ -328,12 +334,18 @@ class M2B_OT_brush(bpy.types.Operator):
         origin = view3d_utils.region_2d_to_origin_3d(region, rv3d, xy)
         direction = view3d_utils.region_2d_to_vector_3d(region, rv3d, xy)
         hit, location, normal, face, obj, matrix = context.scene.ray_cast(context.evaluated_depsgraph_get(), origin, direction)
-        if not hit or not obj.get("m2b_grid_id"):
-            return {"RUNNING_MODAL"}
         settings = context.scene.m2b_editor
-        settings.grid_id = obj["m2b_grid_id"]
         grid = current(context)
-        p = tuple(obj.data.attributes["mc_"+axis].data[face].value for axis in "xyz")
+        if grid.view.get('renderer')=='instances':
+            from .picking import raycast
+            from .grid import mc_to_blender
+            result=raycast(grid,LIBRARIES[tuple(grid.resource_packs)],blender_to_mc(origin),blender_to_mc(direction))
+            if not result:return {'RUNNING_MODAL'}
+            p=result['position'];location=mc_to_blender(result['location']);normal=mc_to_blender(result['normal'])
+        else:
+            if not hit or not obj.get('m2b_grid_id'):return {'RUNNING_MODAL'}
+            settings.grid_id=obj['m2b_grid_id'];grid=current(context)
+            p = tuple(obj.data.attributes["mc_"+axis].data[face].value for axis in "xyz")
         if event.alt:
             settings.state = grid.blocks[p].state
             settings.minimum = p
@@ -475,6 +487,7 @@ class M2B_PT_tools(bpy.types.Panel):
             l.label(text=f'Selection: {size[0]} × {size[1]} × {size[2]}')
             l.label(text=f'Blocks: {len(grid.blocks):,} / Revision: {grid.revision}')
         l.prop(s,'resource_path');buttons([('Load Resource Pack','load_resource_pack')])
+        buttons([('Mesh Preview','mesh_preview'),('Instance Preview','instance_preview')])
         buttons([('Recalculate Connections','recalculate_connections')])
         l.prop(s,'autosave');buttons([('Save Recovery Now','save_recovery')])
         l.prop(s,'recovery_path');buttons([('Recover as New Grids','recover_snapshot')])

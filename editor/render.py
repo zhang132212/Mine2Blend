@@ -11,6 +11,13 @@ LEGACY_ASSETS = Path(__file__).resolve().parent.parent / "resources/converter/wi
 CURRENT_ASSETS = Path(__file__).resolve().parent / "data/resources"
 ASSETS = CURRENT_ASSETS if (CURRENT_ASSETS / "resource-info.json").exists() else LEGACY_ASSETS
 
+@lru_cache(maxsize=24)
+def _read_asset(path,mtime):
+    return json.loads(Path(path).read_text(encoding='utf-8'))
+
+def asset_json(path):
+    return _read_asset(str(path),path.stat().st_mtime_ns)
+
 def rotate(p, axis, angle, origin=(0.5, 0.5, 0.5)):
     a = math.radians(angle)
     c, s = math.cos(a), math.sin(a)
@@ -53,17 +60,17 @@ class ModelLibrary:
     def __init__(self):
         self.assets = ASSETS
         self.resource_version = json.loads((ASSETS / "resource-info.json").read_text())["version"] if (ASSETS / "resource-info.json").exists() else "legacy 2026-02-26"
-        self.models = json.loads((ASSETS / "block-models.json").read_text())
+        self.models = dict(asset_json(ASSETS / "block-models.json"))
         special_path=ASSETS/'special-models.json'
-        self.special=json.loads(special_path.read_text())['models'] if special_path.exists() else {}
-        self.definitions = json.loads((ASSETS / "block-definitions.json").read_text())
-        self.uv = json.loads((ASSETS / "atlas-uv.json").read_text())
+        self.special=asset_json(special_path)['models'] if special_path.exists() else {}
+        self.definitions = dict(asset_json(ASSETS / "block-definitions.json"))
+        self.uv = dict(asset_json(ASSETS / "atlas-uv.json"))
         self.pack = None
         self.missing = set()
         self.texture_overrides = {}
         self.ctm = CTM()
         alpha_path=ASSETS/'texture-alpha.json'
-        self.texture_alpha=json.loads(alpha_path.read_text()) if alpha_path.exists() else {}
+        self.texture_alpha=dict(asset_json(alpha_path)) if alpha_path.exists() else {}
 
     def face_texture(self,block,face):
         if not block:return ''
@@ -214,6 +221,7 @@ def rebuild(grid, library, max_chunks=None):
     import bpy
     from .materials import shader as make_shader,color as tint_color
     from .fluids import quads as fluid_quads
+    from . import instancing
     name = "M2B Grid " + grid.id
     collection = bpy.data.collections.get(name)
     if collection is None:
@@ -293,22 +301,26 @@ def rebuild(grid, library, max_chunks=None):
                 colors.extend([(*tint_color(tint_block,tint,grid.view.get('biome','minecraft:plains')),opacity)]*4)
         if not faces:
             if existing:
+                instancing.detach(existing)
                 mesh = existing.data
                 bpy.data.objects.remove(existing, do_unlink=True)
                 if mesh.users == 0:
                     bpy.data.meshes.remove(mesh)
             continue
-        mesh = bpy.data.meshes.new(obj_name)
-        mesh.from_pydata(vertices, [], faces)
-        for mat in materials:mesh.materials.append(mat)
-        mesh.polygons.foreach_set("material_index", mats)
-        layer = mesh.uv_layers.new(name="UVMap")
-        layer.data.foreach_set("uv", [f for pair in uvs for f in pair])
-        color_layer=mesh.color_attributes.new(name='mc_tint',type='FLOAT_COLOR',domain='CORNER')
-        color_layer.data.foreach_set('color_srgb',[v for rgba in colors for v in rgba])
-        for i, axis in enumerate("xyz"):
-            attr = mesh.attributes.new("mc_" + axis, "INT", "FACE")
-            attr.data.foreach_set("value", [p[i] for p in block_positions])
+        instance_mode=grid.view.get('renderer','mesh')=='instances'
+        if instance_mode:mesh,sources=instancing.build(obj_name,vertices,uvs,mats,block_positions,colors,materials)
+        else:
+            mesh = bpy.data.meshes.new(obj_name)
+            mesh.from_pydata(vertices, [], faces)
+            for mat in materials:mesh.materials.append(mat)
+            mesh.polygons.foreach_set("material_index", mats)
+            layer = mesh.uv_layers.new(name="UVMap")
+            layer.data.foreach_set("uv", [f for pair in uvs for f in pair])
+            color_layer=mesh.color_attributes.new(name='mc_tint',type='FLOAT_COLOR',domain='CORNER')
+            color_layer.data.foreach_set('color_srgb',[v for rgba in colors for v in rgba])
+            for i, axis in enumerate("xyz"):
+                attr = mesh.attributes.new("mc_" + axis, "INT", "FACE")
+                attr.data.foreach_set("value", [p[i] for p in block_positions])
         mesh.update()
         if existing:
             old = existing.data
@@ -320,6 +332,11 @@ def rebuild(grid, library, max_chunks=None):
             collection.objects.link(existing)
         existing["m2b_grid_id"] = grid.id
         existing["m2b_derived"] = True
+        if instance_mode:instancing.attach(existing,sources)
+        else:instancing.detach(existing)
         existing.show_in_front=grid.view.get('xray',False)
     grid.dirty.difference_update(processed)
-    return {"objects": len(collection.objects), "missing_models": sorted(library.missing), "preview_resources": library.resource_version,"pending_chunks":len(grid.dirty)}
+    instancing.prune()
+    from . import entities
+    entity_stats=entities.rebuild(grid,library,collection) or {}
+    return {"objects": len(collection.objects), "missing_models": sorted(library.missing), "preview_resources": library.resource_version,"pending_chunks":len(grid.dirty),**entity_stats}

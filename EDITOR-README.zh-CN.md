@@ -63,4 +63,5 @@ python build_editor.py
 `tools/build_biome_colors.py` 可重新生成 26.2 的 biome 色表。Minecraft 资源的许可与插件代码不同，源码仓库提供构建工具，不将生成的新版图集作为 GPL 资源发布。
 
 Windows Blender 5.2.1 的流程已实测；Linux/macOS 验收状态以 CI 实际结果为准。
-当前仍需完成 GN 后端、复杂建筑压力测试、实体动态外观及游戏端格式/方向对照。详见设计记录中的 13 项矩阵。
+Mesh Preview / Instance Preview 切换合并网格或 Geometry Nodes 实例化，不改变建筑数据。
+当前仍需完成复杂建筑压力测试、实体动态外观及游戏端格式/方向对照。详见设计记录中的 13 项矩阵。

@@ -17,6 +17,6 @@ for area in bpy.context.screen.areas:
     if area.type=='VIEW_3D':
         space=area.spaces.active;space.show_region_ui=True;space.shading.type='MATERIAL'
         space.region_3d.view_location=Vector((4,-4,1));space.region_3d.view_distance=26
-bpy.ops.wm.save_as_mainfile(filepath=str(root/'test-output/Editor-QA.blend'))
+bpy.ops.wm.save_as_mainfile(filepath=str(root/'test-output/Editor-QA-0.7.blend'))
 from mcblock_mine2blend.editor import bridge
 bridge.start()

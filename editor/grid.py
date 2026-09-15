@@ -77,7 +77,7 @@ class BlockGrid:
         self.components = {}
         self.source_metadata = {}
         self.resource_packs = []
-        self.view = {"hidden_layers":[],"slice_min":None,"slice_max":None,"isolate":None,"xray":False,"biome":"minecraft:plains"}
+        self.view = {"hidden_layers":[],"slice_min":None,"slice_max":None,"isolate":None,"xray":False,"biome":"minecraft:plains","renderer":"mesh"}
         self.dirty = set()
         self.revision = 0
         self._undo, self._redo = [], []

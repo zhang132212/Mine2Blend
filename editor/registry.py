@@ -2,12 +2,14 @@
 from pathlib import Path
 import json
 import zipfile
+from functools import lru_cache
 from .grid import BlockRecord
 
 class Registry:
     def __init__(self):
         self.blocks = json.loads((Path(__file__).parent / "data/blocks.json").read_text())
 
+    @lru_cache(maxsize=8192)
     def resolve(self, state, nbt=None):
         b = BlockRecord.parse(state, nbt)
         key = b.block_id.removeprefix("minecraft:")
