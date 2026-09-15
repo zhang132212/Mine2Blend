@@ -4,7 +4,7 @@ id = "mcblock_mine2blend"
 version = "0.7.0"
 name = "Mine2Blend Editor Alpha"
 tagline = "Minecraft BlockGrid editor with Litematic export and agent API"
-maintainer = "MCBlock"
+maintainer = "zhang132212 (editor fork); MCBlock (upstream)"
 type = "add-on"
 wheels = [
   "./wheels/litemapy-0.11.0b0-py3-none-any.whl",
@@ -13,7 +13,7 @@ wheels = [
   "./wheels/mcschematic-11.4.4-py3-none-any.whl",
   "./wheels/immutable_views-0.6.1-py2.py3-none-any.whl",
 ]
-website = "https://mcblock.top/blender"
+website = "https://github.com/zhang132212/Mine2Blend"
 tags = ["Import-Export"]
 blender_version_min = "4.2.0"
 license = [

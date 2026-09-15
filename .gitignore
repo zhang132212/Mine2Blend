@@ -24,3 +24,5 @@ test-output/
 *.blend1
 # Generated Minecraft resources are rebuilt from a pinned archive, not republished in source.
 /editor/data/resources/
+/output/
+/output-*.log

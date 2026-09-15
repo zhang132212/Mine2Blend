@@ -1,6 +1,6 @@
 bl_info = {
     "name": "Mine2Blend Editor Alpha",
-    "author": "MCBlock",
+    "author": "MCBlock (upstream), zhang132212 (editor fork)",
     "version": (0, 7, 0),
     "blender": (4, 2, 0),
     "location": "3D 视图 > 侧栏 > MC Editor",

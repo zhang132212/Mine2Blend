@@ -15,7 +15,7 @@ def main():
     target = ROOT / f"dist/Mine2Blend-Editor-{version}.zip"
     target.parent.mkdir(exist_ok=True)
     folders = ["core", "operators", "panels", "editor", "wheels", "assets","LICENSES"]
-    files = [ROOT / name for name in ("__init__.py", "preferences.py", "properties.py", "blender_manifest.toml", "LICENSE", "THIRD_PARTY.md", "EDITOR-README.zh-CN.md", "DESIGN.zh-CN.md")]
+    files = [ROOT / name for name in ("__init__.py", "preferences.py", "properties.py", "blender_manifest.toml", "LICENSE", "THIRD_PARTY.md", "ATTRIBUTION.zh-CN.md", "README.upstream.md", "EDITOR-README.zh-CN.md", "DESIGN.zh-CN.md")]
     for folder in folders:
         files.extend(p for p in (ROOT / folder).rglob("*") if p.is_file() and "__pycache__" not in p.parts)
     # Original geometry/atlas is available for fallback. Legacy converter remains optional.
