@@ -43,24 +43,25 @@ def load(library,path):
             return resolved.read_bytes()
         meta=json.loads(read('pack.mcmeta'))
         pack=meta.get('pack',{})
-        if not any(k in pack for k in ('pack_format','min_format','supported_formats')):raise ValueError('Missing resource pack format')
+        from .pack_metadata import resolve
+        resources,overlays,diagnostics=resolve(names,meta)
         cache=Path(tempfile.gettempdir())/'Mine2Blend'/'resource-images'
         cache.mkdir(parents=True,exist_ok=True)
-        definitions={};models={};textures={};alphas={};rules=[];diagnostics=[]
+        definitions={};models={};textures={};alphas={};rules=[]
         total=0
-        for name in names:
+        for name,physical in resources.items():
             parts=PurePosixPath(name).parts
             if len(parts)<4 or parts[0]!='assets':continue
             ns=parts[1];relative='/'.join(parts[2:]);prefix='' if ns=='minecraft' else ns+':'
             if relative.startswith('models/') and relative.endswith('.json'):
-                models[prefix+relative[7:-5]]=json.loads(read(name))
+                models[prefix+relative[7:-5]]=json.loads(read(physical))
             elif relative.startswith('blockstates/') and relative.endswith('.json'):
-                definitions[prefix+relative[12:-5]]=json.loads(read(name))
+                definitions[prefix+relative[12:-5]]=json.loads(read(physical))
             elif name.endswith('.properties') and relative.startswith(('optifine/ctm/','mcpatcher/ctm/')):
-                try:rules.append(Rule.parse(ns+':'+relative,read(name).decode('utf-8-sig')))
+                try:rules.append(Rule.parse(ns+':'+relative,read(physical).decode('utf-8-sig')))
                 except ValueError as exc:diagnostics.append(str(exc))
             elif name.endswith('.png') and relative.startswith(('textures/','optifine/ctm/','mcpatcher/ctm/')):
-                data=read(name);total+=len(data)
+                data=read(physical);total+=len(data)
                 if total>512_000_000:raise ValueError('Resource images exceed 512MB')
                 digest=hashlib.sha256(data).hexdigest();target=cache/(digest+'.png')
                 if not target.exists():target.write_bytes(data)
@@ -77,6 +78,7 @@ def load(library,path):
         library.occluded_cached.cache_clear()
         library.alternatives.cache_clear();library.all_choices.cache_clear()
         if hasattr(library,'prototype_cache'):library.prototype_cache.clear()
-        return {'path':str(source),'pack':pack,'models':len(models),'blockstates':len(definitions),'textures':len(textures),'ctm_rules':len(rules),'diagnostics':diagnostics}
+        if hasattr(library,'isolated_surface_keys'):library.isolated_surface_keys.clear()
+        return {'path':str(source),'pack':pack,'overlays':overlays,'models':len(models),'blockstates':len(definitions),'textures':len(textures),'ctm_rules':len(rules),'diagnostics':diagnostics}
     finally:
         if archive:archive.close()

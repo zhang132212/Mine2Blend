@@ -32,7 +32,7 @@
 | 10 | 格式 | Litematic 正负尺寸多区域、实体/Block Entity/ticks；Sponge v2/v3 读、v2 写；typed NBT 回环 | 游戏端 26.2 实际打开；Sponge biome 完整保存；根自定义标签策略 |
 | 11 | MCP | JSON schema、结构查询/命名构件、NumPy chunk 查询、门/床配对与支撑检查、主线程桥、Scene ID、幂等请求、PNG 预览、IO 作业 | 跨客户端回归；静态支撑不等于游戏 tick 验证 |
 | 12 | 性能 | 100k/500k 实心和混合实例测试、局部重建、后台 IO/序列化、取消、恢复、轮转错误日志 | 首次复杂场景预览优化、内存和帧时间预算 |
-| 13 | 测试 | 46 项 Python 单测、Blender 后台流程、47 CTM 图块、GUI 放置/框选；含 GN/实体的三平台 CI 已通过 1682561 | 最新修改三平台复验；游戏端对照；新版安装包最终复验 |
+| 13 | 测试 | 51 项 Python 单测、Blender 后台流程、47 CTM 图块、GUI 放置/框选；含 GN/实体的三平台 CI 已通过 eb0e489 | 最新优化三平台复验；游戏端对照 |
 
 ## 实际验证
 
@@ -42,12 +42,14 @@
 - `tests/blender_gallery.py`：146 类特殊模型候选总览，26.2 普通模型优先于旧特殊渲染器。
 - `tests/blender_instances.py`：实例化后逐顶点与网格后端比较，保存重开、切换后资源释放。
 - `tests/blender_entities.py`：实体预览、未知实体占位、原始 NBT 导出。
-- 三平台 CI： https://github.com/zhang132212/Mine2Blend/actions/runs/34927264208 （基线提交 1d4092a）。
+- 三平台 CI： https://github.com/zhang132212/Mine2Blend/actions/runs/34930131381 （提交 eb0e489）。
 - `tools/audit_resources.py`：1196 默认状态无缺失模型、无缺失贴图；这不等于全部视觉与游戏一致。
 - `tests/blender_benchmark.py`：原始机器耗时见 `test-output/benchmark.json`，仅实心石头场景，不能代表复杂建筑。
 - Computer Use 已在独立 QA 窗口验证 Fill、画笔放置、面拾取/方向，用户原窗口未修改。
 - `Editor-QA-Instances.blend` 的 GN 场景画笔 GUI 验证：297 → 298 块，楼梯正确落在拾取表面。
-- 混合 8 种模型、间隔 2 格的 GN 基准：100k 为 338 chunk / 8 原型，首次预览 97.84 秒、单次编辑 2.32 秒；500k 为 1183 chunk / 8 原型，首次预览 613.05 秒、单次编辑 3.10 秒。见 `test-output/complex-benchmark.json`。测试在加权随机模型加入之前运行，不能当作当前所有材质包的性能承诺。
+- 混合 8 种模型、间隔 2 格的 GN 基准：100k 为 338 chunk / 8 原型，首次预览 5.76 秒、单次编辑 0.35 秒；500k 为 1183 chunk / 8 原型，首次预览 132.04 秒、单次编辑 1.08 秒。见 `test-output/complex-benchmark.json`。所有 chunk 共享一个节点组。此基准不能代表所有复杂材质包或硬件。
+- 资源包支持新版主次版本范围和按顺序应用的 overlays；解析依据 Mojang 25w31a 元数据规范。旧包可加载预览，但会返回不兼容版本提示。
+- 独立测试 profile 的安装包启用、18 块 Litematic 导出、真实 HTTP Bridge 和未授权请求拒绝均通过；不修改用户原 Blender profile。
 
 ## 数据保真边界
 

@@ -7,11 +7,11 @@ import hashlib
 from itertools import groupby
 from .grid import mc_to_blender
 
-def build(name,vertices,uvs,mats,positions,colors,materials,surface_keys,library):
+def build(name,vertices,uvs,mats,positions,colors,materials,surface_keys,library,prebuilt=()):
     import bpy
     if not hasattr(library,'prototype_cache'):library.prototype_cache={}
     cache=library.prototype_cache
-    prototypes=[];points=[]
+    prototypes=[proto for p,proto in prebuilt];points=[(p,mc_to_blender(p)) for p,proto in prebuilt]
     for p,group in groupby(enumerate(positions),key=lambda pair:pair[1]):
         indices=[i for i,_ in group];origin=mc_to_blender(p)
         key=surface_keys[p]
@@ -54,25 +54,36 @@ def build(name,vertices,uvs,mats,positions,colors,materials,surface_keys,library
 
 def attach(obj,sources):
     import bpy
-    name=obj.name+' / Instancing'
+    name='M2B Shared Instancing'
     group=bpy.data.node_groups.get(name)
     if group is None:
         group=bpy.data.node_groups.new(name,'GeometryNodeTree')
         group.interface.new_socket(name='Geometry',in_out='INPUT',socket_type='NodeSocketGeometry')
         group.interface.new_socket(name='Geometry',in_out='OUTPUT',socket_type='NodeSocketGeometry')
-    group.nodes.clear();nodes=group.nodes;links=group.links
-    inp=nodes.new('NodeGroupInput');out=nodes.new('NodeGroupOutput')
-    info=nodes.new('GeometryNodeCollectionInfo');info.inputs['Collection'].default_value=sources
-    info.inputs['Separate Children'].default_value=True;info.inputs['Reset Children'].default_value=True
-    index=nodes.new('GeometryNodeInputNamedAttribute');index.data_type='INT';index.inputs['Name'].default_value='m2b_instance'
-    instance=nodes.new('GeometryNodeInstanceOnPoints');instance.inputs['Pick Instance'].default_value=True
-    links.new(inp.outputs['Geometry'],instance.inputs['Points']);links.new(info.outputs['Instances'],instance.inputs['Instance']);links.new(index.outputs['Attribute'],instance.inputs['Instance Index']);links.new(instance.outputs['Instances'],out.inputs['Geometry'])
-    modifier=obj.modifiers.get('M2B Instances') or obj.modifiers.new('M2B Instances','NODES');modifier.node_group=group
+        group.interface.new_socket(name='Sources',in_out='INPUT',socket_type='NodeSocketCollection')
+        nodes=group.nodes;links=group.links
+        inp=nodes.new('NodeGroupInput');out=nodes.new('NodeGroupOutput')
+        info=nodes.new('GeometryNodeCollectionInfo');links.new(inp.outputs['Sources'],info.inputs['Collection'])
+        info.inputs['Separate Children'].default_value=True;info.inputs['Reset Children'].default_value=True
+        index=nodes.new('GeometryNodeInputNamedAttribute');index.data_type='INT';index.inputs['Name'].default_value='m2b_instance'
+        instance=nodes.new('GeometryNodeInstanceOnPoints');instance.inputs['Pick Instance'].default_value=True
+        links.new(inp.outputs['Geometry'],instance.inputs['Points']);links.new(info.outputs['Instances'],instance.inputs['Instance']);links.new(index.outputs['Attribute'],instance.inputs['Instance Index']);links.new(instance.outputs['Instances'],out.inputs['Geometry'])
+    modifier=obj.modifiers.get('M2B Instances') or obj.modifiers.new('M2B Instances','NODES')
+    previous=modifier.node_group;modifier.node_group=group
+    socket=next(s for s in group.interface.items_tree if s.name=='Sources' and s.in_out=='INPUT')
+    if getattr(modifier,'properties',None) is not None:
+        getattr(modifier.properties.inputs,socket.identifier).value=sources
+    else:modifier[socket.identifier]=sources
+    if previous and previous!=group and not previous.users:bpy.data.node_groups.remove(previous)
 
 def detach(obj):
     import bpy
     if 'M2B Instances' in obj.modifiers:
-        group=obj.modifiers['M2B Instances'].node_group
+        modifier=obj.modifiers['M2B Instances'];group=modifier.node_group
+        if group and group.name=='M2B Shared Instancing':
+            socket=next(s for s in group.interface.items_tree if s.name=='Sources' and s.in_out=='INPUT')
+            if getattr(modifier,'properties',None) is not None:getattr(modifier.properties.inputs,socket.identifier).value=None
+            else:modifier[socket.identifier]=None
         obj.modifiers.remove(obj.modifiers['M2B Instances'])
         if group and not group.users:bpy.data.node_groups.remove(group)
     collection=bpy.data.collections.get(obj.name+' / Instance Sources')

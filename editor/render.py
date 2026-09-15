@@ -282,6 +282,7 @@ def rebuild(grid, library, max_chunks=None):
         material_indices[path]=len(materials);materials.append(mat)
         return material_indices[path]
     processed=sorted(grid.dirty)
+    instance_mode=grid.view.get('renderer','mesh')=='instances'
     if max_chunks is not None:processed=processed[:max_chunks]
     for chunk in processed:
         obj_name = name + " / " + ",".join(map(str, chunk))
@@ -289,6 +290,7 @@ def rebuild(grid, library, max_chunks=None):
         vertices, faces, uvs, mats, block_positions = [], [], [], [], []
         colors=[]
         surface_keys={}
+        prebuilt=[]
         for p in sorted(grid.chunks.get(chunk, ())):
             if not visible(grid,p):continue
             block = grid.blocks[p]
@@ -297,6 +299,15 @@ def rebuild(grid, library, max_chunks=None):
             expanded=[]
             emitted=[]
             choice=library.choice_key(block.state,p)
+            isolated_key=None
+            if instance_mode and not library.ctm.rules and block.block_id not in ('minecraft:water','minecraft:lava','minecraft:bubble_column') and ('waterlogged','true') not in block.properties:
+                if all(tuple(p[i]+d[i] for i in range(3)) not in grid.blocks for d in DIRECTIONS.values()):
+                    isolated_key=(block.state,choice,grid.view.get('biome'),grid.view.get('xray'))
+                    if not hasattr(library,'isolated_surface_keys'):library.isolated_surface_keys={}
+                    saved=library.isolated_surface_keys.get(isolated_key)
+                    prototype=bpy.data.objects.get(getattr(library,'prototype_cache',{}).get(saved,''))
+                    if prototype is not None:
+                        prebuilt.append((p,prototype));continue
             base_quads=library.quads(block.state,choice)
             source=list(base_quads)
             source.extend(fluid_quads(block,p,lambda q:grid.blocks.get(q) if visible(grid,q) else None,library.opaque_cube))
@@ -305,7 +316,7 @@ def rebuild(grid, library, max_chunks=None):
                 neighbor=tuple(p[i]+cull[i] for i in range(3)) if cull else None
                 if cull and visible(grid,neighbor) and library.occluded(block,grid.blocks.get(neighbor),quad,cull):
                     continue
-                face=quad_face(quad)
+                face=quad_face(quad) if library.ctm.rules else None
                 if face and library.ctm.rules:
                     from .ctm import uv_basis
                     tex,overlays=library.ctm.select(p,block,tex,face,grid.blocks.get,library.face_texture,grid.view.get('biome','minecraft:plains'),library.opaque_cube,uv_basis(quad,uv))
@@ -315,6 +326,15 @@ def rebuild(grid, library, max_chunks=None):
                         surface_ids.append((source_index,index+1))
                 expanded.append((quad,uv,tex,cull,tint,translucent))
                 surface_ids.append((source_index,0))
+            fluid_geometry=tuple(tuple(tuple(v) for v in q[0]) for q in source[len(base_quads):])
+            surface_key=(block.state,choice,tuple((surface_ids[i],q[2].removeprefix('minecraft:')) for i,q in enumerate(expanded)),fluid_geometry,grid.view.get('biome'),grid.view.get('xray'))
+            surface_keys[p]=surface_key
+            if isolated_key is not None and expanded:
+                library.isolated_surface_keys[isolated_key]=surface_key
+            if instance_mode and expanded:
+                prototype=bpy.data.objects.get(getattr(library,'prototype_cache',{}).get(surface_key,''))
+                if prototype is not None:
+                    prebuilt.append((p,prototype));continue
             for quad_index,(quad, uv, tex, cull,tint,translucent) in enumerate(expanded):
                 idx = len(vertices)
                 vertices.extend(mc_to_blender(tuple(v[i]+p[i] for i in range(3))) for v in quad)
@@ -341,9 +361,7 @@ def rebuild(grid, library, max_chunks=None):
                     tint_block=BlockRecord('minecraft:water')
                 opacity=.3 if grid.view.get('xray') else .7 if tex.startswith('block/water_') else 1
                 colors.extend([(*tint_color(tint_block,tint,grid.view.get('biome','minecraft:plains')),opacity)]*4)
-            fluid_geometry=tuple(tuple(tuple(v) for v in q[0]) for q in source[len(base_quads):])
-            surface_keys[p]=(block.state,choice,tuple(emitted),fluid_geometry,grid.view.get('biome'),grid.view.get('xray'))
-        if not faces:
+        if not faces and not prebuilt:
             if existing:
                 instancing.detach(existing)
                 mesh = existing.data
@@ -351,8 +369,7 @@ def rebuild(grid, library, max_chunks=None):
                 if mesh.users == 0:
                     bpy.data.meshes.remove(mesh)
             continue
-        instance_mode=grid.view.get('renderer','mesh')=='instances'
-        if instance_mode:mesh,sources=instancing.build(obj_name,vertices,uvs,mats,block_positions,colors,materials,surface_keys,library)
+        if instance_mode:mesh,sources=instancing.build(obj_name,vertices,uvs,mats,block_positions,colors,materials,surface_keys,library,prebuilt)
         else:
             mesh = bpy.data.meshes.new(obj_name)
             mesh.from_pydata(vertices, [], faces)

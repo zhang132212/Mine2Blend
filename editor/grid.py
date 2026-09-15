@@ -82,10 +82,16 @@ class BlockGrid:
         self.revision = 0
         self._undo, self._redo = [], []
         self._chunk_arrays = {}
+        self._bounds_cache = None
 
     def _set(self, p, block):
         chunk = tuple(v // 16 for v in p)
         self._chunk_arrays.pop(chunk,None)
+        if self._bounds_cache is not None:
+            lo,hi=self._bounds_cache
+            if block is None or block.block_id==AIR:
+                if any(p[i] in (lo[i],hi[i]) for i in range(3)):self._bounds_cache=None
+            else:self._bounds_cache=(tuple(min(p[i],lo[i]) for i in range(3)),tuple(max(p[i],hi[i]) for i in range(3)))
         if block is None or block.block_id == AIR:
             self.blocks.pop(p, None)
             if chunk in self.chunks:
@@ -177,8 +183,9 @@ class BlockGrid:
     def bounds(self):
         if not self.blocks:
             return None
-        return [tuple(min(p[i] for p in self.blocks) for i in range(3)),
-                tuple(max(p[i] for p in self.blocks) for i in range(3))]
+        if self._bounds_cache is None:
+            self._bounds_cache=(tuple(min(p[i] for p in self.blocks) for i in range(3)),tuple(max(p[i] for p in self.blocks) for i in range(3)))
+        return list(self._bounds_cache)
 
     def summary(self):
         return {"grid_id": self.id, "name": self.name, "revision": self.revision,

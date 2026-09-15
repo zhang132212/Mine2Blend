@@ -31,15 +31,21 @@ class Registry:
     def search(self, query="", offset=0, limit=100):
         keys = sorted(k for k in self.blocks if query.lower() in k)
         return {"total": len(keys), "items": [{"id": "minecraft:" + k,
-                 "properties": self.blocks[k][0], "defaults": self.blocks[k][1]}
+                 "properties": self.blocks[k][0], "defaults": self.blocks[k][1],
+                 "property_schema":{name:property_schema(values,self.blocks[k][1][name]) for name,values in self.blocks[k][0].items()}}
                  for k in keys[offset:offset + min(limit, 500)]]}
+
+def property_schema(values,default):
+    if set(values)=={'true','false'}:return {'type':'boolean','default':default=='true'}
+    if all(v.lstrip('-').isdigit() for v in values):return {'type':'integer','enum':[int(v) for v in values],'default':int(default)}
+    return {'type':'string','enum':values,'default':default}
 
 def matches(condition, properties):
     if not condition:
         return True
     return all((any(matches(c, properties) for c in value) if key == "OR" else
                 all(matches(c, properties) for c in value) if key == "AND" else
-                properties.get(key) in str(value).split("|")) for key, value in condition.items())
+                properties.get(key) in (str(value).lower() if isinstance(value,bool) else str(value)).split("|")) for key, value in condition.items())
 
 class ResourcePack:
     def __init__(self, path):

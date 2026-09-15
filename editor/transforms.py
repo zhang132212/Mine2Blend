@@ -115,6 +115,19 @@ def transform_metadata(grid,minimum,maximum,pivot=(0,0,0),turns=0,mirror=None,of
                     for i,a in enumerate('XYZ'):out['Tile'+a]=nl.Int(transformed[i]-region.origin[i])
                 entities.append(out.snbt())
         metadata['regions'][index]['entities']=entities
+        for key,text in region.pending_ticks.items():
+            ticks=[]
+            for tag in nl.parse_nbt(text):
+                world=tuple(int(tag[a])+region.origin[i] for i,a in enumerate('xyz'))
+                selected=inside(world)
+                if not selected or not move:ticks.append(tag)
+                if selected:
+                    for count in range(1,copies+1):
+                        out=nl.parse_nbt(tag.snbt())
+                        destination=coordinate(world,pivot,turns,mirror,tuple(v*count for v in offset))
+                        for i,a in enumerate('xyz'):out[a]=nl.Int(destination[i]-region.origin[i])
+                        ticks.append(out)
+            metadata['regions'][index]['pending_ticks'][key]=nl.List[nl.Compound](ticks).snbt()
     for name,component in grid.components.items():
         lo,hi=component['bounds']
         if not inside(lo) or not inside(hi):continue

@@ -374,7 +374,6 @@ class M2B_OT_brush(bpy.types.Operator):
         if not 0<=xy[0]<region.width or not 0<=xy[1]<region.height:return {'PASS_THROUGH'}
         origin = view3d_utils.region_2d_to_origin_3d(region, rv3d, xy)
         direction = view3d_utils.region_2d_to_vector_3d(region, rv3d, xy)
-        hit, location, normal, face, obj, matrix = context.scene.ray_cast(context.evaluated_depsgraph_get(), origin, direction)
         settings = context.scene.m2b_editor
         grid = current(context)
         if grid.view.get('renderer')=='instances':
@@ -384,6 +383,7 @@ class M2B_OT_brush(bpy.types.Operator):
             if not result:return {'RUNNING_MODAL'}
             p=result['position'];location=mc_to_blender(result['location']);normal=mc_to_blender(result['normal'])
         else:
+            hit, location, normal, face, obj, matrix = context.scene.ray_cast(context.evaluated_depsgraph_get(), origin, direction)
             if not hit or not obj.get('m2b_grid_id'):return {'RUNNING_MODAL'}
             settings.grid_id=obj['m2b_grid_id'];grid=current(context)
             p = tuple(obj.data.attributes["mc_"+axis].data[face].value for axis in "xyz")
