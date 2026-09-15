@@ -26,7 +26,7 @@ def orientations(grid,registry):
 def support(grid,library):
     from .occlusion import covered
     issues=[]
-    def full_top(block):return bool(block and covered((0,0,1,1),library.boundary(block.state,'up')))
+    def full_top(block):return library.sturdy(block,'up')
     for p,b in grid.blocks.items():
         name=b.block_id.removeprefix('minecraft:');props=dict(b.properties);direction=None;rule=None
         if name in ('sand','red_sand','gravel','suspicious_sand','suspicious_gravel') or name.endswith('_concrete_powder'):
@@ -43,7 +43,7 @@ def support(grid,library):
             direction={'floor':'down','ceiling':'up'}.get(props.get('face'),opposite(props.get('facing','north')));rule='switch attachment'
         if direction:
             neighbor=grid.blocks.get(add(p,DIRECTIONS[direction]))
-            if direction=='down':supported=full_top(neighbor)
-            else:supported=bool(neighbor and covered((.375,.375,.625,.625),library.boundary(neighbor.state,opposite(direction))))
+            support_type=1 if rule in ('floor attachment','lantern attachment') else 0
+            supported=library.sturdy(neighbor,opposite(direction),support_type)
             if not supported:issues.append({'position':p,'code':'missing_support','message':rule+' lacks a supporting face','support_position':add(p,DIRECTIONS[direction])})
     return {'revision':grid.revision,'issues':issues[:1000],'total':len(issues),'scope':'Static attachment and gravity diagnostics based on model boundary faces; no game tick simulation'}

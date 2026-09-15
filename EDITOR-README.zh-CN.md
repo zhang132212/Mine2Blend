@@ -58,6 +58,9 @@ python -m pip install -r requirements-mcp.txt pillow==12.3.0
 python tools/fetch_resources.py
 npm ci --prefix resources/converter/win-x64 --omit=dev --ignore-scripts
 node tools/bake_special_models.mjs
+python tools/fetch_game_client.py
+# 构建机安装 JDK 25，并设置 JAVA_HOME；仅构建时需要 Java。
+python tools/extract_game_models.py --minecraft-dir test-output/game-client
 python -m unittest discover -s tests -v
 python build_editor.py
 ```
@@ -70,3 +73,5 @@ Region from Selection 设置具名导出区域；Fit All Regions 在保留实体
 Blender 的全局撤销不回退方块数据；使用 Undo Blocks/Redo Blocks 回退方块事务，避免场景快照覆盖最近编辑。
 错误日志位于 `%TEMP%/Mine2Blend/logs`，每个进程最多保留约 8 MB，不记录桥接 token 或请求载荷。
 100k/500k 混合场景压力测试已完成；首次大场景预览仍慢，实体动态外观及游戏端格式/方向对照仍需完善。详见设计记录中的 13 项矩阵。
+
+26.2 构建从官方客户端提取 32,366 个状态的遮挡、支撑、栅栏/墙/栏杆连接和墙上方碰撞数据，以及 358 个模型层。实体目录包含 119 类实际 26.2 模型，支持已映射的幼年、气候及铜氧化变体。构建不启动游戏、不读取存档；客户端与生成数据留在本地，不进入源码归档。

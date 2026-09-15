@@ -42,6 +42,11 @@ def derive(p,block,get,is_solid=solid):
                 connect=(block.block_id=="minecraft:nether_brick_fence")==(neighbor.block_id=="minecraft:nether_brick_fence")
             if nk=="gate" and kind in ("fence","wall"):
                 connect=axis(dict(neighbor.properties).get("facing","north"))!=axis(d)
+            if neighbor:
+                physical=collision_library().physical(neighbor.state)
+                if physical and 'connections' in physical:
+                    index=(1 if block.block_id=='minecraft:nether_brick_fence' else 0) if kind=='fence' else 2 if kind=='pane' else 3
+                    connect=physical['connections'][d][index]
             props[d]=("low" if connect else "none") if kind=="wall" else str(connect).lower()
         if kind=="wall":
             above=at("up")
@@ -52,6 +57,17 @@ def derive(p,block,get,is_solid=solid):
             ew=props["east"]!="none" and props["west"]!="none"
             count=sum(props[d]!="none" for d in HORIZONTAL)
             props["up"]=str(not ((ns or ew) and count==2) or family(above)=="wall" and dict(above.properties).get("up")=="true").lower()
+            physical=collision_library().physical(above.state if above else 'minecraft:air')
+            if physical and 'wall_above' in physical:
+                top=physical['wall_above']
+                for d in HORIZONTAL:
+                    if props[d]!='none':props[d]='tall' if top[d] else 'low'
+                n,s,e,w=(props[d] for d in ('north','south','east','west'))
+                asymmetric=(n=='none')!=(s=='none') or (e=='none')!=(w=='none')
+                if top['wall_post'] or all(v=='none' for v in (n,s,e,w)) or asymmetric:raised=True
+                elif n==s=='tall' or e==w=='tall':raised=False
+                else:raised=top['post_override'] or top['post_covered']
+                props['up']=str(raised).lower()
     elif kind=="gate":
         facing=props["facing"]
         props["in_wall"]=str(any(family(at(d))=="wall" for d in (left(facing),right(facing)))).lower()

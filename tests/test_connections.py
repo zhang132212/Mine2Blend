@@ -23,7 +23,7 @@ class ConnectivityTests(unittest.TestCase):
     def test_registry_models_drive_connections(self):
         self.put([((0,0,0),'minecraft:oak_fence'),((1,0,0),'minecraft:iron_block')])
         self.assertEqual(self.props((0,0,0))['east'],'true')
-        self.put([((1,0,0),'minecraft:glass')]);self.assertEqual(self.props((0,0,0))['east'],'false')
+        self.put([((1,0,0),'minecraft:glass')]);self.assertEqual(self.props((0,0,0))['east'],'true')
         self.put([((0,0,0),'minecraft:glass_pane')]);self.assertEqual(self.props((0,0,0))['east'],'true')
     def test_bed_pair(self):
         s=EditorService();gid=s.execute('create_grid',{})['grid_id']
@@ -31,6 +31,15 @@ class ConnectivityTests(unittest.TestCase):
         self.assertEqual(s.execute('place_block',args)['changed'],2)
         self.assertEqual(dict(s.grids[gid].blocks[(1,0,0)].properties)['part'],'head')
         self.assertEqual(s.execute('place_block',{'grid_id':gid,'expected_revision':1,'position':[1,0,0],'state':'minecraft:air'})['changed'],2)
+    def test_wall_collision_above_and_post(self):
+        self.put([((0,0,0),'minecraft:cobblestone_wall'),((0,0,-1),'minecraft:stone'),((0,0,1),'minecraft:stone')])
+        self.assertEqual((self.props((0,0,0))['north'],self.props((0,0,0))['up']),('low','false'))
+        self.put([((0,1,0),'minecraft:stone_slab[type=bottom]')])
+        self.assertEqual((self.props((0,0,0))['north'],self.props((0,0,0))['south'],self.props((0,0,0))['up']),('tall','tall','false'))
+        self.put([((0,1,0),'minecraft:stone_slab[type=top]')])
+        self.assertEqual(self.props((0,0,0))['north'],'low')
+        self.put([((1,0,0),'minecraft:stone')])
+        self.assertEqual(self.props((0,0,0))['up'],'true')
     def test_rails(self):
         self.put([((0,0,0),'minecraft:rail'),((0,0,-1),'minecraft:rail'),((1,0,0),'minecraft:rail')])
         self.assertEqual(self.props((0,0,0))['shape'],'north_east')

@@ -73,6 +73,27 @@ class ModelLibrary:
         self.ctm = CTM()
         alpha_path=ASSETS/'texture-alpha.json'
         self.texture_alpha=dict(asset_json(alpha_path)) if alpha_path.exists() else {}
+        physics_path=ASSETS/'vanilla-block-physics.json'
+        self.physics=asset_json(physics_path) if physics_path.exists() else None
+
+    @lru_cache(maxsize=32768)
+    def physical(self,state):
+        if not self.physics:return None
+        index=self.physics['states'].get(state)
+        if index is None:
+            from .registry import Registry
+            if not hasattr(self,'physics_registry'):self.physics_registry=Registry()
+            try:index=self.physics['states'].get(self.physics_registry.resolve(state).state)
+            except ValueError:return None
+        return self.physics['palette'][index] if index is not None else None
+
+    def sturdy(self,block,face,kind=0):
+        if not block:return False
+        properties=self.physical(block.state)
+        if properties:return properties['sturdy'][face][kind]
+        from .occlusion import covered
+        area=(0,0,1,1) if kind==0 else (.375,.375,.625,.625)
+        return covered(area,self.boundary(block.state,face))
 
     def face_texture(self,block,face,p=None):
         if not block:return ''
@@ -226,6 +247,8 @@ class ModelLibrary:
     @lru_cache(maxsize=8192)
     def full_opaque(self,state):
         from .occlusion import covered
+        physical=self.physical(state)
+        if physical and not physical['solid_render']:return False
         choices=self.all_choices(state)
         return choices is not None and all(covered((0,0,1,1),self.boundary(state,face,True,choice)) for choice in choices for face in DIRECTIONS)
 
@@ -247,6 +270,12 @@ class ModelLibrary:
         target=rectangle(quad,face,False)
         if target is None:return False
         same_transparent=block.block_id==neighbor.block_id and ('glass' in block.block_id or block.block_id in ('minecraft:ice','minecraft:slime_block','minecraft:honey_block'))
+        physical=self.physical(neighbor.state)
+        if physical and not same_transparent:
+            if not physical['can_occlude']:return False
+            axis={'east':(1,2),'west':(1,2),'up':(0,2),'down':(0,2),'north':(0,1),'south':(0,1)}[face]
+            coverage=[(a[axis[0]],a[axis[1]],a[axis[0]+3],a[axis[1]+3]) for a in physical['faces'][OPPOSITE[face]]]
+            if not covered(target,tuple(coverage)):return False
         choices=self.all_choices(neighbor.state)
         return choices is not None and all(covered(target,self.boundary(neighbor.state,OPPOSITE[face],not same_transparent,choice)) for choice in choices)
 

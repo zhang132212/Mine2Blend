@@ -20,6 +20,9 @@ Development fork: https://github.com/zhang132212/Mine2Blend
 | sharp | upstream range ^0.34.5 | Apache-2.0; legacy converter only, native libvips dependency requires platform packaging |
 | gl-matrix | upstream range ^3.4.3 | MIT; legacy converter only |
 | Node.js | not bundled in editor ZIP | Node distribution includes multiple third-party notices; optional legacy sidecar |
+| EntityModelJson | 39fec50d012e88e006fe084416fb8b80a0f100e3 | MIT; legacy entity texture catalog; notice in LICENSES/EntityModelJson-MIT.txt |
+| Minecraft Java client | 26.2 | Build-only Mojang artifact, separately licensed; never included in source archive |
+| JDK | 25 | Build host dependency only; not bundled in extension |
 
 Pure-Python dependency wheels retain their dist-info license files in the extension.
 Before redistribution, ship corresponding modified source, GPL text and notices with the
@@ -55,3 +58,5 @@ The original LGPL text is retained in LICENSES/Continuity-LGPL-3.0.txt.
 - Official release: https://www.minecraft.net/en-us/article/minecraft-java-edition-26-2
 - `editor/data/blocks.json` is the 26.2 summary's allowed properties and defaults.
 - Original legacy atlas remains pinned to the upstream converter's 2026-02-26-copy resource label.
+- Official client metadata SHA-1: `1595470509933451a460bd157624e6e4f083890b`; client and dependencies verified against their official checksums.
+- `tools/DumpGameModels.java` extracts actual model layers and state physics into ignored local resource outputs. All 119 catalog entities use 26.2 geometry after this build step.

@@ -1,24 +1,32 @@
 """Render a grid in an isolated temporary scene, preserving the working camera."""
 from pathlib import Path
 import math
+from itertools import product
 from .grid import mc_to_blender
 
 def render(grid,path,size=1024):
     import bpy
     from mathutils import Vector
-    if not grid.bounds:raise ValueError('Empty grid')
     size=max(128,min(int(size),4096))
     collection=bpy.data.collections.get('M2B Grid '+grid.id)
     if collection is None:raise ValueError('Build preview mesh first')
+    bpy.context.view_layer.update()
+    corners=[]
+    if grid.bounds:
+        lo,hi=grid.bounds
+        corners.extend(Vector(mc_to_blender(p)) for p in product(*(tuple((lo[i],hi[i]+1)) for i in range(3))))
+    for obj in collection.objects:
+        if obj.type=='MESH':corners.extend(obj.matrix_world@Vector(p) for p in obj.bound_box)
+    if not corners:raise ValueError('Grid has no visible geometry')
     path=Path(path).resolve();path.parent.mkdir(parents=True,exist_ok=True)
     scene=bpy.data.scenes.new('M2B Temporary Preview')
     created=[]
     world=None
     try:
         scene.collection.children.link(collection)
-        lo,hi=grid.bounds
-        center=Vector(mc_to_blender(tuple((a+b+1)/2 for a,b in zip(lo,hi))))
-        radius=max(b-a+1 for a,b in zip(lo,hi))
+        lo=tuple(min(p[i] for p in corners) for i in range(3));hi=tuple(max(p[i] for p in corners) for i in range(3))
+        center=Vector(tuple((a+b)/2 for a,b in zip(lo,hi)))
+        radius=max(b-a for a,b in zip(lo,hi))
         data=bpy.data.cameras.new('M2B Preview Camera');camera=bpy.data.objects.new(data.name,data);created.append(camera);scene.collection.objects.link(camera)
         camera.location=center+Vector((1.3,1.6,1.15))*max(radius,3)
         camera.rotation_euler=(center-camera.location).to_track_quat('-Z','Y').to_euler()
