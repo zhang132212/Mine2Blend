@@ -21,7 +21,7 @@ class Mine2BlendPreferences(bpy.types.AddonPreferences):
 
     converter_path: bpy.props.StringProperty(
         name="转换器路径（可选）",
-        description="内测调试用；留空时使用插件 resources/converter 下的内置转换器",
+        description="可选的旧 OBJ 导入器；MC Editor 的导入导出不需要此转换器",
         default="",
         subtype="FILE_PATH",
     )
@@ -46,8 +46,8 @@ class Mine2BlendPreferences(bpy.types.AddonPreferences):
         layout.prop(self, "converter_path")
         layout.prop(self, "log_excerpt_lines")
         box = layout.box()
-        box.label(text="M2 内测已内置 Windows x64 runtime 转换器")
-        box.label(text="本插件不需要网站账号，也不保存任何密钥")
+        box.label(text="MC Editor 支持 Windows / macOS / Linux")
+        box.label(text="编辑器导入导出使用内置 Python 库")
 
 
 def get_preferences(context=None) -> Mine2BlendPreferences:

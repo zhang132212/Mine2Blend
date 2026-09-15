@@ -119,6 +119,13 @@ def derive(p,block,get,is_solid=solid):
             value="side" if nk=="wire" or component else "none"
             if is_solid(neighbor) and not above_solid and family(get(add(target,(0,1,0))))=="wire": value="up"
             elif not is_solid(neighbor) and family(get(add(target,(0,-1,0))))=="wire": value="side"
+            def physics(b):return collision_library().physical(b.state if b else 'minecraft:air')
+            native=physics(neighbor);above=physics(at('up'))
+            if native and above and 'wire' in native:
+                wire=native['wire'];upper=physics(get(add(target,(0,1,0))));lower=physics(get(add(target,(0,-1,0))))
+                if not above['wire']['conductor'] and wire['climb'] and upper and upper.get('wire',{}).get('vertical'):
+                    value='up' if native['sturdy'][opposite(d)][0] else 'side'
+                else:value='side' if wire[d] or not wire['conductor'] and lower and lower.get('wire',{}).get('vertical') else 'none'
             props[d]=value
         connected=[d for d in HORIZONTAL if props[d]!="none"]
         if len(connected)==1: props[opposite(connected[0])]="side"

@@ -43,6 +43,13 @@ class ConnectivityTests(unittest.TestCase):
     def test_rails(self):
         self.put([((0,0,0),'minecraft:rail'),((0,0,-1),'minecraft:rail'),((1,0,0),'minecraft:rail')])
         self.assertEqual(self.props((0,0,0))['shape'],'north_east')
+    def test_wire_glass_climb_and_conductor(self):
+        self.put([((0,0,0),'minecraft:redstone_wire'),((1,0,0),'minecraft:glass'),((1,1,0),'minecraft:redstone_wire')])
+        self.assertEqual(self.props((0,0,0))['east'],'up')
+        self.put([((0,1,0),'minecraft:stone'),((0,0,-1),'minecraft:redstone_wire')])
+        self.assertEqual(self.props((0,0,0))['east'],'none')
+        self.put([((0,1,0),'minecraft:glass')])
+        self.assertEqual(self.props((0,0,0))['east'],'up')
     def test_door_pair(self):
         s=EditorService();g=s.execute('create_grid',{})
         out=s.execute('place_block',{'grid_id':g['grid_id'],'expected_revision':0,'position':[0,0,0],'state':'minecraft:oak_door','placement':{'look':'east'}})

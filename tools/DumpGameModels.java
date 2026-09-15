@@ -26,6 +26,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.FenceBlock;
 import net.minecraft.world.level.block.IronBarsBlock;
 import net.minecraft.world.level.block.WallBlock;
+import net.minecraft.world.level.block.RedStoneWireBlock;
+import net.minecraft.world.level.block.TrapDoorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.SupportType;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
@@ -99,6 +101,7 @@ public class DumpGameModels {
         Map<String,Integer> states = new TreeMap<>();
         var wallConnect=WallBlock.class.getDeclaredMethod("connectsTo",BlockState.class,boolean.class,Direction.class);
         wallConnect.setAccessible(true);
+        var wireConnect=RedStoneWireBlock.class.getDeclaredMethod("shouldConnectTo",BlockState.class,Direction.class);wireConnect.setAccessible(true);
         var wallCovered=WallBlock.class.getDeclaredMethod("isCovered",VoxelShape.class,VoxelShape.class);wallCovered.setAccessible(true);
         var postField=WallBlock.class.getDeclaredField("TEST_SHAPE_POST");postField.setAccessible(true);
         var sidesField=WallBlock.class.getDeclaredField("TEST_SHAPES_WALL");sidesField.setAccessible(true);
@@ -108,7 +111,13 @@ public class DumpGameModels {
             Map<String,Object> faces = new TreeMap<>();
             Map<String,Object> sturdy = new TreeMap<>();
             Map<String,Object> connections = new TreeMap<>();
+            Map<String,Object> wire = new TreeMap<>();
+            wire.put("conductor",state.isRedstoneConductor(EmptyBlockGetter.INSTANCE,BlockPos.ZERO));
+            wire.put("vertical",wireConnect.invoke(null,state,null));
+            wire.put("supports",state.isFaceSturdy(EmptyBlockGetter.INSTANCE,BlockPos.ZERO,Direction.UP)||state.is(Blocks.HOPPER));
+            wire.put("climb",block instanceof TrapDoorBlock||state.isFaceSturdy(EmptyBlockGetter.INSTANCE,BlockPos.ZERO,Direction.UP)||state.is(Blocks.HOPPER));
             for (var direction : Direction.values()) {
+                if(direction.getAxis().isHorizontal())wire.put(direction.getName(),wireConnect.invoke(null,state,direction));
                 List<Object> boxes = new ArrayList<>();
                 for (var box : state.getFaceOcclusionShape(direction).toAabbs()) boxes.add(List.of(box.minX,box.minY,box.minZ,box.maxX,box.maxY,box.maxZ));
                 faces.put(direction.getName(),boxes);
@@ -130,7 +139,7 @@ public class DumpGameModels {
             wallAbove.put("post_covered",wallCovered.invoke(null,bottom,postShape));
             for(var entry:wallShapes.entrySet()) wallAbove.put(entry.getKey().getName(),wallCovered.invoke(null,bottom,entry.getValue()));
             var properties=Map.of("solid_render",state.isSolidRender(),"can_occlude",state.canOcclude(),"solid",state.isSolid(),
-                "connection_exception",Block.isExceptionForConnection(state),"faces",faces,"sturdy",sturdy,"connections",connections,"wall_above",wallAbove);
+                "connection_exception",Block.isExceptionForConnection(state),"faces",faces,"sturdy",sturdy,"connections",connections,"wall_above",wallAbove,"wire",wire);
             Integer index=lookup.get(properties);
             if (index==null) { index=palette.size();palette.add(properties);lookup.put(properties,index); }
             states.put(BlockStateParser.serialize(state),index);

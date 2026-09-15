@@ -45,5 +45,8 @@ def support(grid,library):
             neighbor=grid.blocks.get(add(p,DIRECTIONS[direction]))
             support_type=1 if rule in ('floor attachment','lantern attachment') else 0
             supported=library.sturdy(neighbor,opposite(direction),support_type)
+            if name=='redstone_wire' and neighbor:
+                physical=library.physical(neighbor.state)
+                if physical and 'wire' in physical:supported=physical['wire']['supports']
             if not supported:issues.append({'position':p,'code':'missing_support','message':rule+' lacks a supporting face','support_position':add(p,DIRECTIONS[direction])})
-    return {'revision':grid.revision,'issues':issues[:1000],'total':len(issues),'scope':'Static attachment and gravity diagnostics based on model boundary faces; no game tick simulation'}
+    return {'revision':grid.revision,'issues':issues[:1000],'total':len(issues),'scope':'Static attachment and gravity diagnostics using native 26.2 support faces with model fallback; no game tick simulation'}

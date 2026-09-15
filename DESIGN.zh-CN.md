@@ -26,7 +26,7 @@
 | 3 | BlockGrid | bounds、chunk、regions、typed NBT、dirty、metadata、undo、NumPy 调色板查询 | 重叠导入 region 当前拒绝；不猜测冲突块优先级 |
 | 4 | 渲染 | 分块、GN 实例化、模型缓存、atlas、cutout/alpha、tint、AO、静态流体、26.2 实体模型/变体/资源包贴图/未知占位 | 动态旗帜图案/告示牌文字/皮肤；动画 |
 | 5 | 编辑 | 搜索、9 格快捷栏、画笔、框选、选区轮廓、填充替换、含实体/ticks 的复制粘贴、变换阵列、剖面隔离、恢复、region 面板 | 完整交互回归 |
-| 6 | 方向 | 属性表单、点击面放置、半砖合并、双格门/铰链、stairs/fence/wall/pane/rail/wire 静态连接 | 墙与红石特殊邻居的游戏端逐例对照；支撑规则覆盖 |
+| 6 | 方向 | 属性表单、点击面放置、半砖合并、双格门/铰链、stairs/fence/wall/pane/rail/wire 静态连接；实际墙碰撞与红石导电/连接表 | 游戏端复杂轨道分岔对照；支撑规则覆盖 |
 | 7 | Multipart | AND/OR/when、多个模型组合、缓存、邻居失效、uvlock、按位置稳定的加权模型选择 | 加权随机种子不同于游戏；uvlock 精确性对照 |
 | 8 | Culling | cullface、实际游戏 can_occlude/solid_render/面遮挡形状、边界矩形覆盖、贴图透明信息、透明同类连接；数据不删除 | 外部模型资源包视觉回归 |
 | 9 | CTM | ctm47、horizontal、vertical、overlay、repeat、fixed、状态/贴图/面/biome/weight、实际 UV 面基底、基础规则与 overlay 叠加 | 外部资源包兼容回归；不含 OptiFine 全部扩展方法 |
@@ -43,8 +43,9 @@
 - `tests/blender_gallery.py`：146 类特殊模型候选总览，26.2 普通模型优先于旧特殊渲染器。
 - `tests/blender_instances.py`：实例化后逐顶点与网格后端比较，保存重开、切换后资源释放。
 - `tests/blender_entities.py`：实体预览、未知实体占位、原始 NBT 导出。
-- 三平台 CI： https://github.com/zhang132212/Mine2Blend/actions/runs/34931258914 （提交 e14b394）。
-- 官方客户端下载后的独立提取构建已在 Windows 通过：358 模型层、32,366 状态/364 物理配置，119 类实体，旧实体几何回退为 0。`tests/blender_entity_gallery.py` 的 15 类实体渲染已检查。
+- 三平台 CI： https://github.com/zhang132212/Mine2Blend/actions/runs/34933145799 （提交 a476d18，含官方客户端独立提取链）。
+- 官方客户端下载后的独立提取构建已在 Windows 通过：358 模型层、32,366 状态/392 物理配置（含红石），119 类实体，旧实体几何回退为 0。`tests/blender_entity_gallery.py` 的 15 类实体渲染已检查。
+- Scene.copy 从最新内存数据复制建筑并分配独立 Scene/Grid ID；编辑副本及保存重开测试通过。
 - `tools/audit_resources.py`：1196 默认状态无缺失模型、无缺失贴图；这不等于全部视觉与游戏一致。
 - `tests/blender_benchmark.py`：原始机器耗时见 `test-output/benchmark.json`，仅实心石头场景，不能代表复杂建筑。
 - Computer Use 已在独立 QA 窗口验证 Fill、画笔放置、面拾取/方向，用户原窗口未修改。
