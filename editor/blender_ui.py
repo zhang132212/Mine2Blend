@@ -18,6 +18,8 @@ LAST_AUTOSAVE=0
 STATE_ENUMS={}
 UPDATING_STATE=False
 REQUEST_CACHE={}
+UNDO_GRIDS={}
+RECOVERY_PENDING={}
 
 def redraw_view(self,context):
     if context and context.screen:
@@ -64,9 +66,14 @@ def current(context):
         raise ValueError("Create or import a grid first")
     return SERVICE.grids[grid_id]
 
-def persist(scene):
+def persist(scene,force=False):
+    from . import persistence
     grids=SCENE_GRIDS.get(scene.as_pointer(),{})
-    scene["m2b_editor_data"] = json.dumps([g.to_dict() for g in grids.values()], separators=(",", ":"))
+    if force:
+        persistence.PENDING.pop(scene.as_pointer(),None)
+        scene['m2b_editor_data']=persistence.encode(list(grids.values()))
+        persistence.SAVED[scene.as_pointer()]=persistence.signature(list(grids.values()))
+    else:persistence.schedule(scene.as_pointer(),list(grids.values()))
 
 def activate_scene(scene):
     key=scene.as_pointer()
@@ -180,6 +187,8 @@ def load_post(_):
     SCENE_GRIDS.clear()
     RENDER_QUEUE.clear()
     REQUEST_CACHE.clear()
+    from . import persistence
+    persistence.clear()
     scene = bpy.context.scene
     try:
         for saved_scene in bpy.data.scenes:activate_scene(saved_scene)
@@ -192,7 +201,31 @@ def load_post(_):
 @persistent
 def save_pre(_):
     for scene in bpy.data.scenes:
-        if scene.as_pointer() in SCENE_GRIDS:persist(scene)
+        if scene.as_pointer() in SCENE_GRIDS:persist(scene,force=True)
+
+@persistent
+def native_undo_pre(_):
+    # Block transactions have their own history. Blender's global undo can
+    # restore an older asynchronous JSON snapshot and replace scene pointers.
+    UNDO_GRIDS.clear()
+    for scene in bpy.data.scenes:
+        grids=SCENE_GRIDS.get(scene.as_pointer())
+        if grids is not None:UNDO_GRIDS[scene_id(scene)]=grids
+
+@persistent
+def native_undo_post(_):
+    from . import persistence
+    persistence.clear();SCENE_GRIDS.clear();RENDER_QUEUE.clear()
+    for scene in bpy.data.scenes:
+        grids=UNDO_GRIDS.get(scene_id(scene))
+        if grids is None:continue
+        SCENE_GRIDS[scene.as_pointer()]=grids
+        for grid in grids.values():
+            grid.dirty.update(grid.chunks)
+            with bpy.context.temp_override(scene=scene):refresh(grid,scene)
+        persist(scene)
+    UNDO_GRIDS.clear()
+    activate_scene(bpy.context.scene)
 
 class M2BEditorSettings(bpy.types.PropertyGroup):
     grid_id: StringProperty(name="Active Grid")
@@ -221,6 +254,7 @@ class M2BEditorSettings(bpy.types.PropertyGroup):
     show_selection:BoolProperty(name='Selection outline',default=True,update=redraw_view)
     hotbar:StringProperty(default=json.dumps(['minecraft:'+b for b in ('stone','oak_planks','glass','oak_stairs','stone_slab','oak_door','oak_fence','lantern','stone_bricks')]))
     hotbar_slot:IntProperty(name='Shortcut slot',default=1,min=1,max=9)
+    region_name:StringProperty(name='Export region',default='Main')
 
 class M2B_OT_command(bpy.types.Operator):
     bl_idname = "m2b_editor.command"
@@ -260,14 +294,16 @@ class M2B_OT_command(bpy.types.Operator):
                 if self.action=='array':args.update(copies=settings.copies,move=False)
                 self.action='transform_region'
             elif self.action=='copy_selection':
-                lo,hi=settings.minimum,settings.maximum
-                settings.clipboard=json.dumps([[*[p[i]-lo[i] for i in range(3)],b.state,b.nbt] for p,b in grid.blocks.items() if all(a<=v<=z for a,v,z in zip(lo,p,hi))])
+                from .clipboard import capture
+                settings.clipboard=json.dumps(capture(grid,list(settings.minimum),list(settings.maximum)))
                 settings.status='Copied selection'
                 return {'FINISHED'}
             elif self.action=='paste_selection':
-                rows=json.loads(settings.clipboard or '[]')
-                args['blocks']=[{'position':[r[i]+settings.minimum[i] for i in range(3)],'state':r[3],**({'nbt':r[4]} if r[4] else {})} for r in rows]
-                self.action='apply_blocks'
+                data=json.loads(settings.clipboard or '{}')
+                if isinstance(data,list):
+                    args['blocks']=[{'position':[r[i]+settings.minimum[i] for i in range(3)],'state':r[3],**({'nbt':r[4]} if r[4] else {})} for r in data]
+                    self.action='apply_blocks'
+                else:args.update(clipboard=data,origin=list(settings.minimum))
             elif self.action in ('slice','show_all','isolate','xray','hide_layer','mesh_preview','instance_preview'):
                 if self.action=='slice':view={'slice_min':settings.slice_min,'slice_max':settings.slice_max}
                 elif self.action=='isolate':view={'isolate':[list(settings.minimum),list(settings.maximum)]}
@@ -278,6 +314,11 @@ class M2B_OT_command(bpy.types.Operator):
                 args['view']=view;self.action='set_view'
             elif self.action=='load_resource_pack':args['path']=bpy.path.abspath(settings.resource_path)
             elif self.action=='define_component':args.update(name=settings.component_name,minimum=list(settings.minimum),maximum=list(settings.maximum))
+            elif self.action=='fit_export_region':args['name']=settings.region_name
+            elif self.action=='region_from_selection':
+                regions=[{'name':r.name,'origin':list(r.origin),'size':list(r.size)} for r in grid.regions if r.name!=settings.region_name]
+                regions.append({'name':settings.region_name,'origin':list(settings.minimum),'size':[b-a+1 for a,b in zip(settings.minimum,settings.maximum)]})
+                args['regions']=regions;self.action='set_regions'
             elif self.action in ("import_litematic", "export_litematic", "import_schem", "export_schem"):
                 args["path"] = bpy.path.abspath(settings.path)
                 settings.job_id=execute('start_io_job',{'command':self.action,**args})['job_id']
@@ -480,6 +521,7 @@ class M2B_PT_tools(bpy.types.Panel):
         l.separator();l.prop(s,'slice_min');l.prop(s,'slice_max')
         buttons([('Section','slice'),('All','show_all')]);buttons([('Isolate','isolate'),('X-Ray','xray'),('Layer','hide_layer')])
         l.prop(s,'component_name');buttons([('Name component','define_component')])
+        l.prop(s,'region_name');buttons([('Region from Selection','region_from_selection'),('Fit All','fit_export_region')])
         if s.grid_id in SERVICE.grids:
             grid=SERVICE.grids[s.grid_id]
             lo,hi=s.minimum,s.maximum
@@ -508,6 +550,20 @@ def background_tick():
     global LAST_AUTOSAVE
     from . import jobs,recovery
     scenes={s.as_pointer():s for s in bpy.data.scenes}
+    from . import persistence
+    for key in list(persistence.PENDING):
+        value=persistence.collect(key)
+        if value is not None and key in scenes:
+            scenes[key]['m2b_editor_data']=value
+            persist(scenes[key])
+    for key,future in list(RECOVERY_PENDING.items()):
+        if not future.done():continue
+        RECOVERY_PENDING.pop(key)
+        try:future.result()
+        except Exception as exc:
+            from .logging_utils import configure
+            configure().exception('Automatic recovery snapshot failed')
+            if key in scenes:scenes[key].m2b_editor.status='Recovery error: '+str(exc)
     for job in list(jobs.JOBS.values()):
         if job.status=='ready' and not job.applied:
             owner=scenes.get(job.owner)
@@ -543,14 +599,14 @@ def background_tick():
         LAST_AUTOSAVE=now
         for scene in bpy.data.scenes:
             grids=SCENE_GRIDS.get(scene.as_pointer(),{})
-            if grids and scene.m2b_editor.autosave:
-                snapshots=[]
-                for grid in grids.values():
-                    clone=copy.copy(grid);clone.blocks=dict(grid.blocks);clone.regions=copy.deepcopy(grid.regions);snapshots.append(clone)
-                jobs.POOL.submit(recovery.save,snapshots,recovery_folder(),scene_id(scene))
+            if grids and scene.m2b_editor.autosave and scene.as_pointer() not in RECOVERY_PENDING:
+                snapshots=persistence.snapshots(list(grids.values()))
+                RECOVERY_PENDING[scene.as_pointer()]=jobs.POOL.submit(recovery.save,snapshots,recovery_folder(),scene_id(scene))
     return 0.1
 
 def register():
+    from .logging_utils import configure
+    configure().info('Editor registered')
     from . import overlay
     for cls in CLASSES:
         bpy.utils.register_class(cls)
@@ -558,8 +614,10 @@ def register():
     overlay.register()
     bpy.app.handlers.load_post.append(load_post)
     bpy.app.handlers.save_pre.append(save_pre)
-    bpy.app.handlers.undo_post.append(load_post)
-    bpy.app.handlers.redo_post.append(load_post)
+    bpy.app.handlers.undo_pre.append(native_undo_pre)
+    bpy.app.handlers.redo_pre.append(native_undo_pre)
+    bpy.app.handlers.undo_post.append(native_undo_post)
+    bpy.app.handlers.redo_post.append(native_undo_post)
     bpy.app.timers.register(background_tick,first_interval=1,persistent=True)
     if getattr(bpy.context, "scene", None) is None:
         bpy.app.timers.register(deferred_restore, first_interval=0.1)
@@ -570,12 +628,15 @@ def unregister():
     from . import bridge
     from . import overlay
     overlay.unregister()
+    from . import persistence
+    persistence.stop()
     bridge.stop()
     if bpy.app.timers.is_registered(background_tick):bpy.app.timers.unregister(background_tick)
     if bpy.app.timers.is_registered(deferred_restore):
         bpy.app.timers.unregister(deferred_restore)
     for handlers, fn in ((bpy.app.handlers.load_post, load_post), (bpy.app.handlers.save_pre, save_pre),
-                         (bpy.app.handlers.undo_post, load_post), (bpy.app.handlers.redo_post, load_post)):
+                         (bpy.app.handlers.undo_pre, native_undo_pre), (bpy.app.handlers.redo_pre, native_undo_pre),
+                         (bpy.app.handlers.undo_post, native_undo_post), (bpy.app.handlers.redo_post, native_undo_post)):
         if fn in handlers:
             handlers.remove(fn)
     del bpy.types.Scene.m2b_editor

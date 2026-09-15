@@ -3,9 +3,9 @@ import sys,json
 import bpy
 root=Path(__file__).resolve().parents[1];sys.path.insert(0,str(root))
 from editor.grid import BlockGrid,BlockRecord
-from editor.render import ModelLibrary,rebuild
+from editor.render import ModelLibrary,rebuild,quad_face
 from editor.resource_loader import load
-from editor.ctm import INDEX,BASES
+from editor.ctm import INDEX,BASES,uv_basis
 from editor.grid import DIRECTIONS
 library=ModelLibrary();report=load(library,root/'test-output/ctm-test-pack.zip')
 g=BlockGrid('CTM 47 cases');stone=BlockRecord.parse('minecraft:stone')
@@ -13,6 +13,8 @@ centers={}
 basis=[DIRECTIONS[d] for d in BASES['north']]
 for tile in range(47):
     mask=INDEX.index(tile);p=((tile%8)*4,(tile//8)*4,0);centers[p]=tile;g._set(p,stone)
+    face=next(q for q in library.quads_at(stone.state,p) if quad_face(q[0])=='north')
+    basis=uv_basis(face[0],face[1])
     for i in range(8):
         if mask&(1<<i):
             a=basis[i//2];b=basis[(i//2+1)%4] if i%2 else (0,0,0)

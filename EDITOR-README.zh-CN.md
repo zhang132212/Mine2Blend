@@ -31,6 +31,8 @@ print(execute('get_summary', {'grid_id': g['grid_id']}))
 ```
 
 每次修改先查询 revision。`query_region` 提供精确方块、材料、楼层统计；`define_component`/`get_components` 保存墙、屋顶等命名构件。
+`query_chunk` 返回 16³ NumPy 调色板快照（含空气，X 最快、其次 Z、再 Y），适合分析洞口、层高和相邻结构。
+`copy_selection`/`paste_selection` 的 JSON 剪贴板保留实体、方块实体、计划 tick 和命名构件；不依赖原建筑继续存在。
 `list_scenes` 返回 Scene ID；后续参数附带 `scene_id` 可避免窗口切换影响 Agent。
 同一 `request_id` 的相同请求可重试，当前进程缓存最近 512 个成功结果；不同参数重用同一键会报错。
 
@@ -64,4 +66,7 @@ python build_editor.py
 
 Windows Blender 5.2.1 的流程已实测；Linux/macOS 验收状态以 CI 实际结果为准。
 Mesh Preview / Instance Preview 切换合并网格或 Geometry Nodes 实例化，不改变建筑数据。
-当前仍需完成复杂建筑压力测试、实体动态外观及游戏端格式/方向对照。详见设计记录中的 13 项矩阵。
+Region from Selection 设置具名导出区域；Fit All Regions 在保留实体世界坐标的前提下重新包围建筑，解决扩建后的越界导出。
+Blender 的全局撤销不回退方块数据；使用 Undo Blocks/Redo Blocks 回退方块事务，避免场景快照覆盖最近编辑。
+错误日志位于 `%TEMP%/Mine2Blend/logs`，每个进程最多保留约 8 MB，不记录桥接 token 或请求载荷。
+100k/500k 混合场景压力测试已完成；首次大场景预览仍慢，实体动态外观及游戏端格式/方向对照仍需完善。详见设计记录中的 13 项矩阵。

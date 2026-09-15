@@ -20,6 +20,17 @@ class ConnectivityTests(unittest.TestCase):
         self.assertEqual(self.props((0,0,0))['shape'],'outer_left')
         self.put([((0,0,-1),None),((0,0,1),'minecraft:oak_stairs[facing=east]')])
         self.assertEqual(self.props((0,0,0))['shape'],'inner_right')
+    def test_registry_models_drive_connections(self):
+        self.put([((0,0,0),'minecraft:oak_fence'),((1,0,0),'minecraft:iron_block')])
+        self.assertEqual(self.props((0,0,0))['east'],'true')
+        self.put([((1,0,0),'minecraft:glass')]);self.assertEqual(self.props((0,0,0))['east'],'false')
+        self.put([((0,0,0),'minecraft:glass_pane')]);self.assertEqual(self.props((0,0,0))['east'],'true')
+    def test_bed_pair(self):
+        s=EditorService();gid=s.execute('create_grid',{})['grid_id']
+        args={'grid_id':gid,'expected_revision':0,'position':[0,0,0],'state':'minecraft:red_bed','placement':{'look':'east'}}
+        self.assertEqual(s.execute('place_block',args)['changed'],2)
+        self.assertEqual(dict(s.grids[gid].blocks[(1,0,0)].properties)['part'],'head')
+        self.assertEqual(s.execute('place_block',{'grid_id':gid,'expected_revision':1,'position':[1,0,0],'state':'minecraft:air'})['changed'],2)
     def test_rails(self):
         self.put([((0,0,0),'minecraft:rail'),((0,0,-1),'minecraft:rail'),((1,0,0),'minecraft:rail')])
         self.assertEqual(self.props((0,0,0))['shape'],'north_east')

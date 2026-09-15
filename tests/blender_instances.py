@@ -17,7 +17,7 @@ faces=sum(len(o.data.polygons) for o in objects())
 g.view['renderer']='instances';g.dirty.update(g.chunks);rebuild(g,lib)
 assert sum(len(o.data.vertices) for o in objects())==len(g.blocks)
 prototype_count=len([o for o in bpy.data.objects if o.get('m2b_prototype')])
-assert prototype_count<=len(states),prototype_count
+assert prototype_count<=20,prototype_count
 for obj in objects():
     tree=obj.modifiers['M2B Instances'].node_group
     out=next(n for n in tree.nodes if n.type=='GROUP_OUTPUT');instance=next(n for n in tree.nodes if n.bl_idname=='GeometryNodeInstanceOnPoints')

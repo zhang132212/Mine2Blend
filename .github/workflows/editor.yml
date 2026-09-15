@@ -1,7 +1,7 @@
 name: Minecraft editor validation
 on:
   push:
-    branches: [editor, importer, exporter, mcp]
+    branches: [editor, import, exporter, mcp]
   pull_request:
   workflow_dispatch:
 permissions:

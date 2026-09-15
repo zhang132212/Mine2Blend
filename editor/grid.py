@@ -81,9 +81,11 @@ class BlockGrid:
         self.dirty = set()
         self.revision = 0
         self._undo, self._redo = [], []
+        self._chunk_arrays = {}
 
     def _set(self, p, block):
         chunk = tuple(v // 16 for v in p)
+        self._chunk_arrays.pop(chunk,None)
         if block is None or block.block_id == AIR:
             self.blocks.pop(p, None)
             if chunk in self.chunks:
@@ -95,6 +97,22 @@ class BlockGrid:
             self.chunks.setdefault(chunk, set()).add(p)
         self.dirty.add(chunk)
         self.dirty.update(product(*({(v-1)//16,v//16,(v+1)//16} for v in p)))
+
+    def chunk_array(self,chunk):
+        """Read-only uint16 palette array [Y,Z,X], X fastest; air is index zero."""
+        import numpy as np
+        chunk=position(chunk)
+        if chunk in self._chunk_arrays:return self._chunk_arrays[chunk]
+        values=np.zeros((16,16,16),dtype=np.uint16)
+        palette=[BlockRecord(AIR)];lookup={palette[0]:0}
+        for p in sorted(self.chunks.get(chunk,())):
+            block=self.blocks[p]
+            if block not in lookup:lookup[block]=len(palette);palette.append(block)
+            values[p[1]%16,p[2]%16,p[0]%16]=lookup[block]
+        values.flags.writeable=False
+        result=(tuple(palette),values);self._chunk_arrays[chunk]=result
+        if len(self._chunk_arrays)>256:self._chunk_arrays.pop(next(iter(self._chunk_arrays)))
+        return result
 
     def metadata(self):
         return copy.deepcopy({"regions":[r.__dict__ for r in self.regions],"components":self.components,"source_metadata":self.source_metadata,"resource_packs":self.resource_packs,"view":self.view})

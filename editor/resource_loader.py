@@ -6,6 +6,26 @@ import tempfile
 import zipfile
 from .ctm import CTM, Rule
 
+ALPHA_CACHE={}
+
+def alpha_class(path,data):
+    if path in ALPHA_CACHE:return ALPHA_CACHE[path]
+    result='translucent'
+    # RGB/grayscale PNG without a transparency chunk is fully opaque.
+    if data[:8]==b'\x89PNG\r\n\x1a\n' and len(data)>26 and data[25] in (0,2) and b'tRNS' not in data:result='opaque'
+    else:
+        try:
+            import bpy,numpy as np
+            image=bpy.data.images.load(path,check_existing=True)
+            if image.size[0]*image.size[1]>16_777_216:raise ValueError('Resource image exceeds 16 million pixels')
+            pixels=np.empty(len(image.pixels),dtype=np.float32);image.pixels.foreach_get(pixels)
+            alpha=pixels[3::4]
+            if len(alpha):result='opaque' if np.all(alpha>=.99999) else 'cutout' if np.all((alpha<=.00001)|(alpha>=.99999)) else 'translucent'
+        except ImportError:pass  # Non-Blender inspection stays conservative.
+    ALPHA_CACHE[path]=result
+    if len(ALPHA_CACHE)>4096:ALPHA_CACHE.pop(next(iter(ALPHA_CACHE)))
+    return result
+
 def load(library,path):
     source=Path(path).resolve()
     archive=zipfile.ZipFile(source) if source.is_file() else None
@@ -26,7 +46,7 @@ def load(library,path):
         if not any(k in pack for k in ('pack_format','min_format','supported_formats')):raise ValueError('Missing resource pack format')
         cache=Path(tempfile.gettempdir())/'Mine2Blend'/'resource-images'
         cache.mkdir(parents=True,exist_ok=True)
-        definitions={};models={};textures={};rules=[];diagnostics=[]
+        definitions={};models={};textures={};alphas={};rules=[];diagnostics=[]
         total=0
         for name in names:
             parts=PurePosixPath(name).parts
@@ -44,15 +64,19 @@ def load(library,path):
                 if total>512_000_000:raise ValueError('Resource images exceed 512MB')
                 digest=hashlib.sha256(data).hexdigest();target=cache/(digest+'.png')
                 if not target.exists():target.write_bytes(data)
-                textures[prefix+relative.removeprefix('textures/')[:-4]]=str(target)
+                key=prefix+relative.removeprefix('textures/')[:-4]
+                textures[key]=str(target);alphas[key]=alpha_class(str(target),data)
         library.models.update(models);library.definitions.update(definitions)
         library.texture_overrides.update(textures)
+        library.texture_alpha.update(alphas)
         # A later pack replaces rules sharing the same resource path.
         combined={r.source:r for r in library.ctm.rules}
         combined.update({r.source:r for r in rules});library.ctm=CTM(combined.values())
         library.model.cache_clear();library.quads.cache_clear();library.missing.clear()
         library.boundary.cache_clear();library.full_opaque.cache_clear()
         library.occluded_cached.cache_clear()
+        library.alternatives.cache_clear();library.all_choices.cache_clear()
+        if hasattr(library,'prototype_cache'):library.prototype_cache.clear()
         return {'path':str(source),'pack':pack,'models':len(models),'blockstates':len(definitions),'textures':len(textures),'ctm_rules':len(rules),'diagnostics':diagnostics}
     finally:
         if archive:archive.close()

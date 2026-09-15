@@ -1,5 +1,6 @@
 """Static edit-time connectivity; no redstone power or game tick simulation."""
 from collections import deque
+from functools import lru_cache
 from .grid import BlockRecord, DIRECTIONS
 from .transforms import HORIZONTAL
 
@@ -20,10 +21,13 @@ def family(b):
     if n=="minecraft:redstone_wire": return "wire"
     return "other"
 
+@lru_cache(maxsize=1)
+def collision_library():
+    from .render import ModelLibrary
+    return ModelLibrary()
+
 def solid(block):
-    if not block: return False
-    n=block.block_id
-    return n in {"minecraft:stone","minecraft:cobblestone","minecraft:dirt","minecraft:bedrock","minecraft:bricks","minecraft:deepslate","minecraft:glass"} or n.endswith(("_planks","_concrete","_log","_wood","_bricks","_terracotta"))
+    return bool(block and collision_library().opaque_cube(block))
 
 def derive(p,block,get,is_solid=solid):
     props=dict(block.properties)
@@ -33,6 +37,7 @@ def derive(p,block,get,is_solid=solid):
         for d in HORIZONTAL:
             neighbor=at(d); nk=family(neighbor)
             connect=is_solid(neighbor) or nk==kind
+            if kind=='pane' and neighbor and ('glass' in neighbor.block_id or neighbor.block_id=='minecraft:iron_bars'):connect=True
             if kind=="fence" and nk=="fence":
                 connect=(block.block_id=="minecraft:nether_brick_fence")==(neighbor.block_id=="minecraft:nether_brick_fence")
             if nk=="gate" and kind in ("fence","wall"):
@@ -117,9 +122,12 @@ def reconcile(grid,changes,is_solid=solid):
                     q=add(p,(dx,dy,dz))
                     if family(get(q)) in ("fence","pane","wall","gate","stairs","rail","wire"): pending.add(q)
     candidates={p for p,b in staged.items() if family(b) in ("fence","pane","wall","gate","stairs","rail","wire")}
-    for p,b in grid.blocks.items():
-        if family(b) in ("fence","pane","wall","gate","stairs","rail","wire") and any(add(p,(dx,dy,dz)) in staged for dx in (-1,0,1) for dy in (-1,0,1) for dz in (-1,0,1)):
-            candidates.add(p)
+    if len(staged)*27<len(grid.blocks):
+        for p in staged:enqueue(p)
+    else:
+        for p,b in grid.blocks.items():
+            if family(b) in ("fence","pane","wall","gate","stairs","rail","wire") and any(add(p,(dx,dy,dz)) in staged for dx in (-1,0,1) for dy in (-1,0,1) for dz in (-1,0,1)):
+                candidates.add(p)
     pending.update(candidates)
     steps=0
     while pending:

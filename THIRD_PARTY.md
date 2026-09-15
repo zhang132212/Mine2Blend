@@ -36,8 +36,6 @@ Sources:
 - https://github.com/Sloimayyy/mcschematic/blob/main/LICENSE
 - https://github.com/misode/mcmeta (extracted Minecraft data/assets; code and assets have different provenance)
 
-## Resource pin
-
 ## Continuity-derived CTM topology
 
 The CTM 256-entry tile-index map and overlay topology in `editor/ctm.py` and
@@ -47,9 +45,12 @@ for Python and Blender. Original source: https://github.com/PepperCode1/Continui
 Files: CtmSpriteProvider.java, StandardOverlayQuadProcessor.java, DirectionMaps.java.
 The original LGPL text is retained in LICENSES/Continuity-LGPL-3.0.txt.
 
+## Resource pin
+
 - Minecraft Java 26.2: DataVersion 4903, resource pack 88.0, data pack 107.1.
 - Summary tag commit: `711a353b47d84e6cb592a1b72f682e5f44759284`.
 - Assets tag commit: `a4151022c4c3870ac75e8d3a90e5c28e81137b60`.
+- Biome data tag commit: `4d12c0553e21e461085d08dcb2c5d412398c494e`.
 - Metadata: https://raw.githubusercontent.com/misode/mcmeta/26.2-summary/version.json
 - Official release: https://www.minecraft.net/en-us/article/minecraft-java-edition-26-2
 - `editor/data/blocks.json` is the 26.2 summary's allowed properties and defaults.

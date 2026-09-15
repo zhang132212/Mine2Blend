@@ -12,6 +12,10 @@ first=bpy.context.scene;first.m2b_editor.autosave=False
 gid=ui.execute('create_grid',{'name':'Workflow'})['grid_id']
 ui.execute('fill_region',{'grid_id':gid,'expected_revision':0,'minimum':[0,0,0],'maximum':[4,1,4],'state':'minecraft:stone_bricks'})
 snapshot=ui.execute('save_recovery',{})
+# A global Blender undo must never reload a stale background JSON snapshot.
+first['m2b_editor_data']='[]'
+ui.native_undo_pre(None);ui.native_undo_post(None)
+assert len(ui.SERVICE.grids[gid].blocks)==50
 job=ui.execute('start_io_job',{'command':'export_litematic','grid_id':gid,'path':str(out/'workflow.litematic')})
 def wait(job,ready=False):
     deadline=time.monotonic()+30

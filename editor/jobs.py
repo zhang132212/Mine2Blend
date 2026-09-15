@@ -34,7 +34,8 @@ def start(command,path,owner,grid=None):
         job=Job(uuid.uuid4().hex,command,path,owner);JOBS[job.id]=job
     snapshot=None
     if grid is not None:
-        snapshot=copy.copy(grid);snapshot.blocks=dict(grid.blocks);snapshot.regions=copy.deepcopy(grid.regions)
+        from .persistence import snapshots
+        snapshot=snapshots([grid])[0]
         job.revision=grid.revision
     def run():
         temp=None
@@ -53,7 +54,10 @@ def start(command,path,owner,grid=None):
                     if job.cancelled.is_set():job.status='cancelled';return
                     os.replace(temp,path);temp=None
                     result['path']=path;job.result=result;job.status='completed'
-        except Exception as exc:job.error=str(exc);job.status='failed'
+        except Exception as exc:
+            from .logging_utils import configure
+            configure().exception('Schematic job failed: %s',command)
+            job.error=str(exc);job.status='failed'
         finally:
             if temp and os.path.exists(temp):os.unlink(temp)
     POOL.submit(run)

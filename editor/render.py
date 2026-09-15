@@ -2,6 +2,8 @@
 from pathlib import Path
 import json
 import math
+import hashlib
+from itertools import product
 from functools import lru_cache
 from .grid import DIRECTIONS, mc_to_blender
 from .registry import matches
@@ -72,9 +74,37 @@ class ModelLibrary:
         alpha_path=ASSETS/'texture-alpha.json'
         self.texture_alpha=dict(asset_json(alpha_path)) if alpha_path.exists() else {}
 
-    def face_texture(self,block,face):
+    def face_texture(self,block,face,p=None):
         if not block:return ''
-        return next((q[2] for q in self.quads(block.state) if quad_face(q[0])==face),'')
+        return next((q[2] for q in (self.quads_at(block.state,p) if p is not None else self.quads(block.state)) if quad_face(q[0])==face),'')
+
+    @lru_cache(maxsize=8192)
+    def alternatives(self,state):
+        from .grid import BlockRecord
+        block=BlockRecord.parse(state);props=dict(block.properties)
+        definition=self.definitions.get(block.block_id.removeprefix('minecraft:'),{})
+        values=[]
+        for key,value in definition.get('variants',{}).items():
+            if matches(dict(k.split('=',1) for k in key.split(',') if k),props):values.append(value);break
+        values.extend(part['apply'] for part in definition.get('multipart',[]) if matches(part.get('when',{}),props))
+        return tuple(tuple(max(1,int(v.get('weight',1))) for v in value) for value in values if isinstance(value,list))
+
+    def choice_key(self,state,p):
+        result=[]
+        for i,weights in enumerate(self.alternatives(state)):
+            seed=int.from_bytes(hashlib.blake2b(repr((p,i)).encode(),digest_size=8).digest(),'big')%sum(weights)
+            for index,weight in enumerate(weights):
+                if seed<weight:result.append(index);break
+                seed-=weight
+        return tuple(result)
+
+    def quads_at(self,state,p):return self.quads(state,self.choice_key(state,p))
+
+    @lru_cache(maxsize=8192)
+    def all_choices(self,state):
+        lengths=[len(w) for w in self.alternatives(state)]
+        if math.prod(lengths)>128:return None
+        return tuple(product(*(range(n) for n in lengths)))
 
     @lru_cache(maxsize=8192)
     def model(self, name, chain=()):
@@ -86,7 +116,7 @@ class ModelLibrary:
         return {**parent, **item, "textures": {**parent.get("textures", {}), **item.get("textures", {})}}
 
     @lru_cache(maxsize=8192)
-    def quads(self, state):
+    def quads(self, state, choices=()):
         from .grid import BlockRecord
         block = BlockRecord.parse(state)
         if block.block_id in ("minecraft:air", "minecraft:cave_air", "minecraft:void_air"):
@@ -104,6 +134,7 @@ class ModelLibrary:
             return [(v,[(0,16),(16,16),(16,0),(0,0)],'entity/end_portal/end_portal',None,-1,False) for f,v in faces.items() if f=='up' or block.block_id.endswith('end_gateway')]
         special=self.special.get(block.block_id.removeprefix('minecraft:'))
         try:
+            selected_indices=iter(choices)
             if self.pack:
                 selected = self.pack.select(block)
             else:
@@ -111,12 +142,12 @@ class ModelLibrary:
                 selected = []
                 for key, value in definition.get("variants", {}).items():
                     if matches(dict(k.split("=", 1) for k in key.split(",") if k), props):
-                        selected.append(value[0] if isinstance(value, list) else value)
+                        selected.append(value[next(selected_indices,0)%len(value)] if isinstance(value, list) else value)
                         break
                 for part in definition.get("multipart", []):
                     if matches(part.get("when", {}), props):
                         value = part["apply"]
-                        selected.append(value[0] if isinstance(value, list) else value)
+                        selected.append(value[next(selected_indices,0)%len(value)] if isinstance(value, list) else value)
             out = []
             for selection in selected:
                 model = self.pack.model(selection["model"]) if self.pack else self.model(selection["model"])
@@ -182,12 +213,12 @@ class ModelLibrary:
         return [(v, [(0,16),(16,16),(16,0),(0,0)], "", None,-1,False) for v in face_vertices((0,0,0),(1,1,1)).values()]
 
     @lru_cache(maxsize=8192)
-    def boundary(self,state,face,opaque=True):
+    def boundary(self,state,face,opaque=True,choices=()):
         from .occlusion import rectangle
         result=[]
-        for quad,uv,texture,cull,tint,translucent in self.quads(state):
+        for quad,uv,texture,cull,tint,translucent in self.quads(state,choices):
             if quad_face(quad)!=face:continue
-            if opaque and (translucent or texture in self.texture_overrides or self.texture_alpha.get(texture)!='opaque'):continue
+            if opaque and (translucent or self.texture_alpha.get(texture)!='opaque'):continue
             rect=rectangle(quad,face)
             if rect:result.append(rect)
         return tuple(result)
@@ -195,7 +226,8 @@ class ModelLibrary:
     @lru_cache(maxsize=8192)
     def full_opaque(self,state):
         from .occlusion import covered
-        return all(covered((0,0,1,1),self.boundary(state,face)) for face in DIRECTIONS)
+        choices=self.all_choices(state)
+        return choices is not None and all(covered((0,0,1,1),self.boundary(state,face,True,choice)) for choice in choices for face in DIRECTIONS)
 
     def opaque_cube(self,block):
         return bool(block and self.full_opaque(block.state))
@@ -215,7 +247,8 @@ class ModelLibrary:
         target=rectangle(quad,face,False)
         if target is None:return False
         same_transparent=block.block_id==neighbor.block_id and ('glass' in block.block_id or block.block_id in ('minecraft:ice','minecraft:slime_block','minecraft:honey_block'))
-        return covered(target,self.boundary(neighbor.state,OPPOSITE[face],not same_transparent))
+        choices=self.all_choices(neighbor.state)
+        return choices is not None and all(covered(target,self.boundary(neighbor.state,OPPOSITE[face],not same_transparent,choice)) for choice in choices)
 
 def rebuild(grid, library, max_chunks=None):
     import bpy
@@ -255,26 +288,34 @@ def rebuild(grid, library, max_chunks=None):
         existing = bpy.data.objects.get(obj_name)
         vertices, faces, uvs, mats, block_positions = [], [], [], [], []
         colors=[]
+        surface_keys={}
         for p in sorted(grid.chunks.get(chunk, ())):
             if not visible(grid,p):continue
             block = grid.blocks[p]
             if library.opaque_cube(block) and all(visible(grid,q) and library.opaque_cube(grid.blocks.get(q)) for q in (tuple(p[i]+d[i] for i in range(3)) for d in DIRECTIONS.values())):
                 continue
             expanded=[]
-            source=list(library.quads(block.state))
+            emitted=[]
+            choice=library.choice_key(block.state,p)
+            base_quads=library.quads(block.state,choice)
+            source=list(base_quads)
             source.extend(fluid_quads(block,p,lambda q:grid.blocks.get(q) if visible(grid,q) else None,library.opaque_cube))
-            for quad,uv,tex,cull,tint,translucent in source:
-                face=quad_face(quad)
-                if face and library.ctm.rules:
-                    tex,overlays=library.ctm.select(p,block,tex,face,grid.blocks.get,library.face_texture,grid.view.get('biome','minecraft:plains'),library.opaque_cube)
-                    for index,overlay in enumerate(overlays):
-                        delta=DIRECTIONS[face]
-                        expanded.append(([tuple(v[i]+delta[i]*0.0002*(index+1) for i in range(3)) for v in quad],uv,overlay,None,tint,True))
-                expanded.append((quad,uv,tex,cull,tint,translucent))
-            for quad, uv, tex, cull,tint,translucent in expanded:
+            surface_ids=[]
+            for source_index,(quad,uv,tex,cull,tint,translucent) in enumerate(source):
                 neighbor=tuple(p[i]+cull[i] for i in range(3)) if cull else None
                 if cull and visible(grid,neighbor) and library.occluded(block,grid.blocks.get(neighbor),quad,cull):
                     continue
+                face=quad_face(quad)
+                if face and library.ctm.rules:
+                    from .ctm import uv_basis
+                    tex,overlays=library.ctm.select(p,block,tex,face,grid.blocks.get,library.face_texture,grid.view.get('biome','minecraft:plains'),library.opaque_cube,uv_basis(quad,uv))
+                    for index,overlay in enumerate(overlays):
+                        delta=DIRECTIONS[face]
+                        expanded.append(([tuple(v[i]+delta[i]*0.0002*(index+1) for i in range(3)) for v in quad],uv,overlay,None,tint,True))
+                        surface_ids.append((source_index,index+1))
+                expanded.append((quad,uv,tex,cull,tint,translucent))
+                surface_ids.append((source_index,0))
+            for quad_index,(quad, uv, tex, cull,tint,translucent) in enumerate(expanded):
                 idx = len(vertices)
                 vertices.extend(mc_to_blender(tuple(v[i]+p[i] for i in range(3))) for v in quad)
                 faces.append((idx, idx+1, idx+2, idx+3))
@@ -293,12 +334,15 @@ def rebuild(grid, library, max_chunks=None):
                     material_index=1
                 mats.append(material_index)
                 block_positions.append(p)
+                emitted.append((surface_ids[quad_index],tex))
                 tint_block=block
                 if tex.startswith('block/water_'):
                     from .grid import BlockRecord
                     tint_block=BlockRecord('minecraft:water')
                 opacity=.3 if grid.view.get('xray') else .7 if tex.startswith('block/water_') else 1
                 colors.extend([(*tint_color(tint_block,tint,grid.view.get('biome','minecraft:plains')),opacity)]*4)
+            fluid_geometry=tuple(tuple(tuple(v) for v in q[0]) for q in source[len(base_quads):])
+            surface_keys[p]=(block.state,choice,tuple(emitted),fluid_geometry,grid.view.get('biome'),grid.view.get('xray'))
         if not faces:
             if existing:
                 instancing.detach(existing)
@@ -308,7 +352,7 @@ def rebuild(grid, library, max_chunks=None):
                     bpy.data.meshes.remove(mesh)
             continue
         instance_mode=grid.view.get('renderer','mesh')=='instances'
-        if instance_mode:mesh,sources=instancing.build(obj_name,vertices,uvs,mats,block_positions,colors,materials)
+        if instance_mode:mesh,sources=instancing.build(obj_name,vertices,uvs,mats,block_positions,colors,materials,surface_keys,library)
         else:
             mesh = bpy.data.meshes.new(obj_name)
             mesh.from_pydata(vertices, [], faces)

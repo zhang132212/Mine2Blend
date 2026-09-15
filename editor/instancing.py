@@ -7,11 +7,17 @@ import hashlib
 from itertools import groupby
 from .grid import mc_to_blender
 
-def build(name,vertices,uvs,mats,positions,colors,materials):
+def build(name,vertices,uvs,mats,positions,colors,materials,surface_keys,library):
     import bpy
+    if not hasattr(library,'prototype_cache'):library.prototype_cache={}
+    cache=library.prototype_cache
     prototypes=[];points=[]
     for p,group in groupby(enumerate(positions),key=lambda pair:pair[1]):
         indices=[i for i,_ in group];origin=mc_to_blender(p)
+        key=surface_keys[p]
+        proto=bpy.data.objects.get(cache.get(key,''))
+        if proto is not None:
+            prototypes.append(proto);points.append((p,origin));continue
         local=[tuple(round(vertices[i*4+j][axis]-origin[axis],6)+0.0 for axis in range(3)) for i in indices for j in range(4)]
         uv=[tuple(round(v,8) for v in uvs[i*4+j]) for i in indices for j in range(4)]
         rgba=[colors[i*4+j] for i in indices for j in range(4)]
@@ -25,11 +31,13 @@ def build(name,vertices,uvs,mats,positions,colors,materials):
             mesh=bpy.data.meshes.new(proto_name)
             mesh.from_pydata(local,[],[tuple(range(i,i+4)) for i in range(0,len(local),4)])
             names=list(dict.fromkeys(material_names))
-            for key in names:mesh.materials.append(bpy.data.materials[key])
+            for material_name in names:mesh.materials.append(bpy.data.materials[material_name])
             mesh.polygons.foreach_set('material_index',[names.index(n) for n in material_names])
             layer=mesh.uv_layers.new(name='UVMap');layer.data.foreach_set('uv',[v for pair in uv for v in pair])
             layer=mesh.color_attributes.new(name='mc_tint',type='FLOAT_COLOR',domain='CORNER');layer.data.foreach_set('color_srgb',[v for c in rgba for v in c])
             mesh.update();proto=bpy.data.objects.new(proto_name,mesh);proto['m2b_prototype']=True
+        cache[key]=proto.name
+        if len(cache)>65536:cache.pop(next(iter(cache)))
         prototypes.append(proto);points.append((p,origin))
     source_name=name+' / Instance Sources'
     sources=bpy.data.collections.get(source_name) or bpy.data.collections.new(source_name)

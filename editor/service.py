@@ -46,6 +46,9 @@ class EditorService:
         if command == "get_summary":
             return {**grid.summary(),"components":grid.components,"view":grid.view,"resource_packs":grid.resource_packs}
         if command=="get_components":return {"revision":grid.revision,"components":grid.components}
+        if command=='copy_selection':
+            from .clipboard import capture
+            return {'revision':grid.revision,'clipboard':capture(grid,args['minimum'],args['maximum'])}
         if command == "get_block":
             p = position(args["position"])
             return {"position": p, **grid.blocks.get(p, BlockRecord("minecraft:air")).json(), "revision": grid.revision}
@@ -57,30 +60,38 @@ class EditorService:
                     "materials": dict(Counter(b.state for p, b in rows)),
                     "layers": dict(Counter(p[1] for p, b in rows)),
                     "blocks": [{"position": p, **b.json()} for p, b in rows[offset:offset + limit]]}
+        if command=='query_chunk':
+            import numpy as np
+            chunk=position(args['chunk']);palette,values=grid.chunk_array(chunk)
+            counts=np.bincount(values.ravel(),minlength=len(palette))
+            return {'revision':grid.revision,'chunk':chunk,'origin':[v*16 for v in chunk],
+                    'shape':[16,16,16],'axis_order':'YZX','palette':[b.json() for b in palette],
+                    'counts':counts.tolist(),'indices':values.ravel().tolist()}
         if command in ("export_litematic", "export_schem"):
             return getattr(formats, command)(grid, args["path"])
         if command == "validate_orientations":
-            issues = []
-            for p, b in grid.blocks.items():
-                try:
-                    self.registry.resolve(b.state)
-                except ValueError as exc:
-                    issues.append({"position": p, "message": str(exc)})
-            return {"revision": grid.revision, "issues": issues[:1000], "total": len(issues),
-                    "scope": "26.2 property validity; placement physics not simulated"}
+            from .validation import orientations
+            return orientations(grid,self.registry)
         if command == "validate_support":
-            issues = []
-            for (x, y, z), b in grid.blocks.items():
-                if b.block_id in ("minecraft:sand", "minecraft:red_sand", "minecraft:gravel") or b.block_id.endswith("_concrete_powder"):
-                    if (x, y - 1, z) not in grid.blocks:
-                        issues.append({"position": (x, y, z), "message": "Gravity block has air below"})
-            return {"issues": issues[:1000], "total": len(issues), "scope": "Gravity-block heuristic only; no tick simulation"}
+            from .validation import support
+            from .render import ModelLibrary
+            if not hasattr(self,'support_library'):self.support_library=ModelLibrary()
+            return support(grid,self.support_library)
         expected = args.pop("expected_revision", None)
         if expected is None or expected != grid.revision:
             raise ValueError(f"Provide current expected_revision ({grid.revision})")
         if command in ("undo", "redo"):
             return grid.undo(command == "redo")
         auto_connect=args.pop("auto_connect",True)
+        if command=='paste_selection':
+            from .clipboard import paste
+            changes,metadata=paste(grid,args['clipboard'],args['origin'],self.registry)
+            return self.commit(grid,changes,expected,auto_connect,metadata)
+        if command=='fit_export_region':
+            from .regions import fit
+            region=fit(grid,args.get('name','Main'));formats._check_volume(region.size)
+            metadata=grid.metadata();metadata['regions']=[region.__dict__]
+            return grid.apply([],expected,metadata)
         if command=="set_view":
             metadata=grid.metadata();metadata['view'].update(args['view'])
             return grid.apply([],expected,metadata)
@@ -97,10 +108,12 @@ class EditorService:
                 r=Region(item['name'],origin,size)
                 existing=next((v for v in grid.regions if v.name==r.name),None)
                 if existing:
-                    if tuple(existing.origin)!=origin and (existing.entities or existing.pending_ticks):raise ValueError('Region contains entity/tick coordinates; use reframe_grid to change its origin')
-                    r.entities=existing.entities;r.pending_ticks=existing.pending_ticks
+                    from .regions import shifted_entities,shifted_ticks
+                    r.entities=shifted_entities(existing,origin);r.pending_ticks=shifted_ticks(existing,origin)
                 regions.append(r)
             if len({r.name for r in regions})!=len(regions):raise ValueError('Duplicate region names')
+            from .regions import validate_disjoint
+            validate_disjoint(regions)
             for p in grid.blocks:
                 if sum(r.contains(p) for r in regions)!=1:raise ValueError('Each block must belong to exactly one region')
             if any(r.entities or r.pending_ticks for r in grid.regions if r.name not in {s.name for s in regions}):raise ValueError('Cannot discard region entities/ticks')
@@ -129,6 +142,18 @@ class EditorService:
                 dy=1 if dict(existing.properties).get("half")=="lower" else -1
                 partner=(p[0],p[1]+dy,p[2])
                 if grid.blocks.get(partner) and grid.blocks[partner].block_id==existing.block_id: changes.append((partner,None))
+            if block.block_id=='minecraft:air' and existing and existing.block_id.endswith('_bed'):
+                from .connections import add,opposite
+                props=dict(existing.properties);facing=props['facing']
+                partner=add(p,DIRECTIONS[facing if props['part']=='foot' else opposite(facing)])
+                if grid.blocks.get(partner) and grid.blocks[partner].block_id==existing.block_id:changes.append((partner,None))
+            if context is not None and block.block_id.endswith('_bed'):
+                from .connections import add
+                props=dict(block.properties);props['facing']=context.get('look','north');props['part']='foot'
+                partner=add(p,DIRECTIONS[props['facing']])
+                if partner in grid.blocks:raise ValueError('Bed head position is occupied')
+                changes=[(p,BlockRecord(block.block_id,tuple(sorted(props.items())),block.nbt))]
+                props={**props,'part':'head'};changes.append((partner,BlockRecord(block.block_id,tuple(sorted(props.items())))))
             if context is not None and block.block_id.endswith("_door"):
                 props=dict(block.properties);props["half"]="lower"
                 from .connections import left,right,add,solid
@@ -174,8 +199,8 @@ class EditorService:
             return self.commit(grid,changes,expected,auto_connect)
         if command == "copy_region":
             lo, hi, offset = position(args["minimum"]), position(args["maximum"]), position(args["offset"])
-            rows = [(p, b) for p, b in grid.blocks.items() if all(a <= v <= z for a, v, z in zip(lo, p, hi))]
-            return self.commit(grid,[(tuple(p[i]+offset[i] for i in range(3)), b) for p, b in rows], expected,auto_connect)
+            from .transforms import transform_metadata
+            return self.commit(grid,transform_region(grid,lo,hi,offset=offset),expected,auto_connect,transform_metadata(grid,lo,hi,offset=offset))
         raise ValueError(f"Unknown command: {command}")
 
 POSITION = {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3}
@@ -197,6 +222,7 @@ def tool_schema(name, description, props=None, required=None, grid=True, write=F
         "type": "object", "properties": props, "required": required, "additionalProperties": False}}
 
 TOOLS = [
+    tool_schema('fit_export_region','Fit one export region around all blocks and existing regions, preserving entity world positions',{'name':STRING},write=True),
     tool_schema('list_scenes','List persistent scene IDs for independent agent sessions',grid=False),
     tool_schema('start_io_job','Start background schematic IO; export uses immutable revision snapshot',{'command':{'enum':['import_litematic','import_schem','export_litematic','export_schem']},'path':STRING,'grid_id':STRING},['command','path'],grid=False),
     tool_schema('get_job_status','Get background IO state and result',{'job_id':STRING},['job_id'],grid=False),
@@ -204,6 +230,9 @@ TOOLS = [
     tool_schema('save_recovery','Write atomic compressed recovery snapshot',grid=False),
     tool_schema('recover_snapshot','Recover snapshot into new grids without overwriting current grids',{'path':STRING},['path'],grid=False),
     tool_schema('get_components','Read named architectural components and their exact bounds'),
+    tool_schema('query_chunk','Read a compact 16-cube palette grid; X fastest, then Z, then Y. Includes air and typed NBT.',{'chunk':POSITION},['chunk']),
+    tool_schema('copy_selection','Capture blocks, entities, scheduled ticks and components as a portable JSON clipboard',{'minimum':POSITION,'maximum':POSITION},['minimum','maximum']),
+    tool_schema('paste_selection','Paste a captured selection in one undoable transaction',{'origin':POSITION,'clipboard':{'type':'object'}},['origin','clipboard'],write=True),
     tool_schema('define_component','Name a wall/roof/floor/window/room for future structured edits',{'name':STRING,'minimum':POSITION,'maximum':POSITION,'type':STRING,'description':STRING},['name','minimum','maximum'],write=True),
     tool_schema('set_regions','Set explicit export regions; preserve matching region entities',{'regions':{'type':'array','minItems':1,'items':{'type':'object','properties':{'name':STRING,'origin':POSITION,'size':POSITION},'required':['name','origin','size'],'additionalProperties':False}}},['regions'],write=True),
     tool_schema('set_view','Change section/layers/isolation without deleting blocks',{'view':{'type':'object','properties':{'slice_min':{'type':['integer','null']},'slice_max':{'type':['integer','null']},'hidden_layers':{'type':'array','items':{'type':'integer'}},'isolate':{'type':['array','null'],'items':POSITION,'minItems':2,'maxItems':2},'xray':{'type':'boolean'},'biome':STRING,'renderer':{'enum':['mesh','instances']}},'additionalProperties':False}},['view'],write=True),

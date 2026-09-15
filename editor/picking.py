@@ -38,7 +38,7 @@ def raycast(grid,library,origin,direction):
                     p=(cell[0]+dx,cell[1]+dy,cell[2]+dz)
                     if p in tested or p not in grid.blocks or not visible(grid,p):continue
                     tested.add(p);block=grid.blocks[p]
-                    quads=list(library.quads(block.state))+fluid_quads(block,p,grid.blocks.get,library.opaque_cube)
+                    quads=list(library.quads_at(block.state,p))+fluid_quads(block,p,grid.blocks.get,library.opaque_cube)
                     local=sub(origin,p)
                     for quad,*_rest in quads:
                         for ids in ((0,1,2),(0,2,3)):
