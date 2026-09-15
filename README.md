@@ -1,3 +1,9 @@
+# Mine2Blend Editor Alpha — local derivative
+
+新增 0.7.0 BlockGrid 编辑器、26.2 资源、静态连接、CTM、Litematic 导出及结构化 Agent 接口。
+请先阅读 [编辑器使用说明](EDITOR-README.zh-CN.md) 和 [设计/功能边界](DESIGN.zh-CN.md)。
+安装包使用 `build_editor.py` 构建。下面保留上游导入器 README，其功能说明不代表编辑器的当前支持范围。
+
 # Mine2Blend
 
 > 把《我的世界》投影一键导入 Blender 的玩家工具

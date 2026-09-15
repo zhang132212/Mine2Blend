@@ -2106,6 +2106,17 @@ async function processLitematic(litematicPath, outputDir, resources, sharedAtlas
 
   const buildingDir = path.join(outputDir, fileName)
   fs.mkdirSync(buildingDir, { recursive: true })
+  // Render-space metadata for inspection only. Lossless editing/export uses editor/formats.py.
+  const blockDataPath = path.join(buildingDir, `${fileName}.blocks.json`)
+  fs.writeFileSync(blockDataPath, JSON.stringify({
+    schema: 'mine2blend-render-blocks-1',
+    coordinateSpace: 'normalized-minecraft-xyz',
+    lossless: false,
+    limitations: ['normalized origin', 'original region metadata and full NBT are not represented'],
+    size: model.size,
+    blocks: model.blocks,
+    entities: model.entities ?? [],
+  }), 'utf8')
 
   // 复制 atlas 到建筑目录
   const localAtlas = path.join(buildingDir, 'atlas.png')
@@ -2151,6 +2162,7 @@ async function processLitematic(litematicPath, outputDir, resources, sharedAtlas
     name: fileName,
     sourceFormat,
     outputDir: buildingDir,
+    blockData: blockDataPath,
     obj: objPath,
     mtl: mtlPath,
     atlas: localAtlas,

@@ -1,10 +1,10 @@
 bl_info = {
-    "name": "Mine2Blend",
+    "name": "Mine2Blend Editor Alpha",
     "author": "MCBlock",
-    "version": (0, 5, 2),
+    "version": (0, 7, 0),
     "blender": (4, 2, 0),
-    "location": "3D 视图 > 侧栏 > MCBlock",
-    "description": "我的世界投影导入 Blender 插件，支持 Litematic 与 Schematic(.schem)",
+    "location": "3D 视图 > 侧栏 > MC Editor",
+    "description": "Minecraft BlockGrid editor, Litematic export and structured Agent API",
     "category": "Import-Export",
 }
 
@@ -30,6 +30,7 @@ _SUBMODULES = (
     "panels.material_panel",
     "panels.website_panel",
     "panels.diagnostics_panel",
+    "editor.blender_ui",
 )
 
 
@@ -40,8 +41,6 @@ def _iter_modules():
         module = sys.modules.get(full_name)
         if module is None:
             module = importlib.import_module(full_name)
-        else:
-            module = importlib.reload(module)
         yield module
 
 

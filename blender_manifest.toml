@@ -1,11 +1,18 @@
 schema_version = "1.0.0"
 
 id = "mcblock_mine2blend"
-version = "0.5.2"
-name = "Mine2Blend"
-tagline = "我的世界投影导入 Blender 工具，支持 Litematic 与 Schematic(.schem)"
+version = "0.7.0"
+name = "Mine2Blend Editor Alpha"
+tagline = "Minecraft BlockGrid editor with Litematic export and agent API"
 maintainer = "MCBlock"
 type = "add-on"
+wheels = [
+  "./wheels/litemapy-0.11.0b0-py3-none-any.whl",
+  "./wheels/nbtlib-2.0.4-py3-none-any.whl",
+  "./wheels/typing_extensions-4.16.0-py3-none-any.whl",
+  "./wheels/mcschematic-11.4.4-py3-none-any.whl",
+  "./wheels/immutable_views-0.6.1-py2.py3-none-any.whl",
+]
 website = "https://mcblock.top/blender"
 tags = ["Import-Export"]
 blender_version_min = "4.2.0"
@@ -17,8 +24,8 @@ copyright = [
 ]
 
 [permissions]
-files = "读取本地 Litematic 文件、写入 OBJ 缓存并导入到当前 Blender 场景"
-network = "打开 MCBlock 网站、建筑库、网站在线编辑器和插件说明页"
+files = "读写投影、资源包、预览图片和自动恢复文件"
+network = "本地 Agent 桥通信及用户主动打开上游网站"
 
 [build]
 paths_exclude_pattern = [
