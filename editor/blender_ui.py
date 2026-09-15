@@ -20,6 +20,7 @@ UPDATING_STATE=False
 REQUEST_CACHE={}
 UNDO_GRIDS={}
 RECOVERY_PENDING={}
+SCENE_IDENTITIES={}
 
 def redraw_view(self,context):
     if context and context.screen:
@@ -76,6 +77,7 @@ def persist(scene,force=False):
     else:persistence.schedule(scene.as_pointer(),list(grids.values()))
 
 def activate_scene(scene):
+    scene_id(scene)
     key=scene.as_pointer()
     if key not in SCENE_GRIDS:
         grids={}
@@ -185,6 +187,7 @@ def load_post(_):
     if getattr(bpy.context, "scene", None) is None:
         return
     SCENE_GRIDS.clear()
+    SCENE_IDENTITIES.clear()
     RENDER_QUEUE.clear()
     REQUEST_CACHE.clear()
     from . import persistence
@@ -544,6 +547,27 @@ def recovery_folder():
 
 def scene_id(scene):
     if 'm2b_scene_id' not in scene:scene['m2b_scene_id']=uuid.uuid4().hex
+    identity=scene['m2b_scene_id'];key=scene.as_pointer()
+    owner=SCENE_IDENTITIES.get(identity)
+    if owner is not None and owner!=key:
+        source=next((s for s in bpy.data.scenes if s.as_pointer()==owner),None)
+        if source is not None:
+            # Blender scene copies share custom properties and often collections.
+            # Snapshot live data, then give the copy independent grid/render IDs.
+            payload=[g.to_dict() for g in SCENE_GRIDS[owner].values()] if owner in SCENE_GRIDS else json.loads(scene.get('m2b_editor_data','[]'))
+            previous=scene.m2b_editor.grid_id;grids={};selected=''
+            for data in payload:
+                grid=BlockGrid.from_dict(data);old=grid.id;grid.id=uuid.uuid4().hex
+                grids[grid.id]=grid;grid.dirty.update(grid.chunks)
+                if old==previous:selected=grid.id
+            scene['m2b_scene_id']=uuid.uuid4().hex;identity=scene['m2b_scene_id']
+            SCENE_GRIDS[key]=grids;scene.m2b_editor.grid_id=selected or next(iter(grids),'')
+            for collection in list(scene.collection.children):
+                if collection.name.startswith('M2B Grid '):scene.collection.children.unlink(collection)
+            with bpy.context.temp_override(scene=scene):
+                for grid in grids.values():refresh(grid,scene)
+            persist(scene,force=True)
+    SCENE_IDENTITIES[identity]=key
     return scene['m2b_scene_id']
 
 def background_tick():

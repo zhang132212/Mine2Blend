@@ -47,6 +47,17 @@ assert Path(result['path']).is_file()
 assert first.camera==camera and set(bpy.data.scenes)==scenes and set(bpy.data.objects)==objects
 recovered=ui.execute('recover_snapshot',snapshot)['grid_ids'][0]
 assert recovered!=gid and len(ui.SERVICE.grids[recovered].blocks)==50
+# Scene.copy must fork live grids even if async JSON has not been published yet.
+first_id=ui.scene_id(first);first['m2b_editor_data']='[]'
+duplicate=first.copy();duplicate.name='Copied building'
+assert ui.scene_id(duplicate)!=first_id
+ui.activate_scene(duplicate)
+copied=duplicate.m2b_editor.grid_id
+assert copied!=gid and len(ui.SERVICE.grids[copied].blocks)==50
+ui.execute('place_block',{'scene_id':ui.scene_id(duplicate),'grid_id':copied,'expected_revision':ui.SERVICE.grids[copied].revision,'position':[0,0,0],'state':'minecraft:glass'})
+ui.activate_scene(first)
+assert ui.SERVICE.grids[gid].blocks[(0,0,0)].block_id=='minecraft:stone_bricks'
+assert not {c for c in first.collection.children if c.name.startswith('M2B Grid ')}&set(duplicate.collection.children)
 bpy.ops.wm.save_as_mainfile(filepath=str(out/'workflows.blend'))
 bpy.ops.wm.open_mainfile(filepath=str(out/'workflows.blend'))
 assert gid in ui.SERVICE.grids
